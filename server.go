@@ -51,12 +51,12 @@ func (s *SubsServer) apiHandler(c *gin.Context) {
 	// check if file exist
 	expandedPath, err := expandPath(subsConfig.FilePath)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"code": "400", "msg": fmt.Sprintf("error expanding file path [%s] for TAG [%s]: %s", subsConfig.FilePath, subsConfig.Tag, err.Error())})
+		c.JSON(http.StatusBadRequest, gin.H{"code": "400", "msg": fmt.Sprintf("error expanding file path for TAG [%s] failed! err: [%s]", subsConfig.Tag, err.Error())})
 		return
 	}
 	_, err = os.Stat(expandedPath)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"code": "400", "msg": fmt.Sprintf("subs config file [%s] for TAG [%s] not exists! err: %s", expandedPath, subsConfig.Tag, err.Error())})
+		c.JSON(http.StatusBadRequest, gin.H{"code": "400", "msg": fmt.Sprintf("config file for TAG [%s] not exists! err: [%s]", subsConfig.Tag, err.Error())})
 		return
 	}
 
