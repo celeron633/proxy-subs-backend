@@ -67,7 +67,7 @@ func (s *SubsServer) apiHandler(c *gin.Context) {
 // findSubsConfig finds the matching subscription config by apiPath
 func (s *SubsServer) findSubsConfig(apiPath string) *SubsConfig {
 	for _, config := range s.Config.SubsConfigs {
-		if strings.Contains(config.Tag, apiPath) {
+		if strings.Contains(apiPath, config.Tag) {
 			log.Default().Printf("apiHandler apiPath:[%s] matched TAG:[%s]", apiPath, config.Tag)
 			return &config
 		}
