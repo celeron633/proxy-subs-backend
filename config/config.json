@@ -4,6 +4,7 @@
   "need_auth": true,
   "enable_api_when_start": false,
   "debug_mode": true,
+  "token_file_path": "./config/token.txt",
   "subs_configs": [
     {
       "tag": "default",

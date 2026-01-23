@@ -81,6 +81,30 @@ func (s *SubsServer) initRoute() {
 		})
 	})
 
+	// switch
+	switchGroup := s.Router.Group("/switch")
+	switchGroup.Match([]string{"GET", "POST"}, "/status", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"msg":  "switch status",
+			"code": 200,
+			"data": strings.ToLower(strconv.FormatBool(s.ApiSwitch.IsEnabled())),
+		})
+	})
+	switchGroup.Match([]string{"GET", "POST"}, "/on", func(c *gin.Context) {
+		s.ApiSwitch.Enable()
+		c.JSON(http.StatusOK, gin.H{
+			"msg":  "switch enabled",
+			"code": 200,
+		})
+	})
+	switchGroup.Match([]string{"GET", "POST"}, "/off", func(c *gin.Context) {
+		s.ApiSwitch.Disable()
+		c.JSON(http.StatusOK, gin.H{
+			"msg":  "switch disabled",
+			"code": 200,
+		})
+	})
+
 	// favicon.ico handler
 	s.Router.StaticFile("/favicon.ico", "./static/favicon.ico")
 }
