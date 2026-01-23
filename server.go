@@ -35,11 +35,12 @@ func (s *SubsServer) apiHandler(c *gin.Context) {
 	}
 
 	// validate token
-	if !s.TokenManager.ValidateToken(token) {
-		c.JSON(http.StatusBadRequest, gin.H{"code": "400", "msg": "invalid token"})
-		return
+	if s.Config.NeedAuth {
+		if !s.TokenManager.ValidateToken(token) {
+			c.JSON(http.StatusBadRequest, gin.H{"code": "400", "msg": "invalid token"})
+			return
+		}
 	}
-
 	// download subscribe file
 	subsConfig := s.findSubsConfig(apiPath)
 	if subsConfig == nil {
@@ -48,14 +49,19 @@ func (s *SubsServer) apiHandler(c *gin.Context) {
 	}
 
 	// check if file exist
-	_, err := os.Stat(subsConfig.FilePath)
+	expandedPath, err := expandPath(subsConfig.FilePath)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"code": "400", "msg": fmt.Sprintf("subs config file [%s] for TAG [%s] not exists!", subsConfig.FilePath, subsConfig.Tag)})
+		c.JSON(http.StatusBadRequest, gin.H{"code": "400", "msg": fmt.Sprintf("error expanding file path [%s] for TAG [%s]: %s", subsConfig.FilePath, subsConfig.Tag, err.Error())})
+		return
+	}
+	_, err = os.Stat(expandedPath)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": "400", "msg": fmt.Sprintf("subs config file [%s] for TAG [%s] not exists! err: %s", expandedPath, subsConfig.Tag, err.Error())})
 		return
 	}
 
 	// download file
-	c.FileAttachment(subsConfig.FilePath, subsConfig.Tag)
+	c.FileAttachment(expandedPath, subsConfig.Tag)
 }
 
 // findSubsConfig finds the matching subscription config by apiPath
