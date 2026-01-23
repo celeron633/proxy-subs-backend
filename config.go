@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sort"
 )
 
 type SubsConfig struct {
@@ -19,7 +20,15 @@ type SubsServerConfig struct {
 	NeedAuth           bool         `json:"need_auth"`
 	EnableApiWhenStart bool         `json:"enable_api_when_start"`
 	DebugMode          bool         `json:"debug_mode"`
+	TokenFilePath      string       `json:"token_file_path"`
 	SubsConfigs        []SubsConfig `json:"subs_configs"`
+}
+
+func (s *SubsServerConfig) sortSubsConfigs() {
+	// sort by tag length, longer first, use sort.Slice for simplicity
+	sort.Slice(s.SubsConfigs, func(i, j int) bool {
+		return len(s.SubsConfigs[i].Tag) > len(s.SubsConfigs[j].Tag)
+	})
 }
 
 func (s *SubsServerConfig) SetDefaults() {
@@ -42,6 +51,7 @@ func (s *SubsServerConfig) LoadJsonConfig(jsonPath string) error {
 		log.Default().Println("Error loading json config:", err, "path:", jsonPath)
 		return err
 	}
+	s.sortSubsConfigs()
 
 	return nil
 }
@@ -53,6 +63,7 @@ func (s *SubsServerConfig) ShowConfig() {
 	fmt.Printf("  NeedAuth: [%t]\n", s.NeedAuth)
 	fmt.Printf("  EnableApiWhenStart: [%t]\n", s.EnableApiWhenStart)
 	fmt.Printf("  DebugMode: [%t]\n", s.DebugMode)
+	fmt.Printf("  TokenFilePath: [%s]\n", s.TokenFilePath)
 	fmt.Printf("  SubsConfigs:\n")
 	for i, cfg := range s.SubsConfigs {
 		fmt.Printf("    SubsConfig #%d:\n", i)
