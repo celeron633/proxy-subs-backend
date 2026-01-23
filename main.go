@@ -25,7 +25,7 @@ func main() {
 	}
 
 	// TokenValidator
-	tokenManager := new(TokenManager)
+	tokenManager := NewTokenManager()
 	err = tokenManager.LoadTokenFromFile(serverConfig.TokenFilePath)
 	if err != nil {
 		fmt.Printf("Error parsing token file: %s\n", err)
