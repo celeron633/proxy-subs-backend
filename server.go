@@ -82,7 +82,7 @@ func (s *SubsServer) initRoute() {
 	// index
 	s.Router.GET("/", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
-			"msg":  "proxy-subs-backend",
+			"msg":  "hello world",
 			"code": 200,
 		})
 	})
