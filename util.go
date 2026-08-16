@@ -6,16 +6,16 @@ import (
 	"strings"
 )
 
-func expandPath(p string) (string, error) {
-	if strings.HasPrefix(p, "~") {
-		home, err := os.UserHomeDir()
+func expandPath(path string) (string, error) {
+	if path == "~" || strings.HasPrefix(path, "~/") || strings.HasPrefix(path, `~\`) {
+		userHome, err := os.UserHomeDir()
 		if err != nil {
 			return "", err
 		}
 
-		// 处理 "~" 或 "~/xxx"
-		p = filepath.Join(home, strings.TrimPrefix(p, "~"))
+		remainder := strings.TrimLeft(strings.TrimPrefix(path, "~"), `/\`)
+		path = filepath.Join(userHome, remainder)
 	}
 
-	return filepath.Abs(p)
+	return filepath.Abs(path)
 }

@@ -3,3 +3,8 @@
 bin/**
 build/**
 dist/**
+data/**
+*.db
+*.db-shm
+*.db-wal
+nohup.out

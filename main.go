@@ -3,40 +3,37 @@ package main
 import (
 	"flag"
 	"fmt"
+	"log"
 	"os"
 )
 
 func main() {
-	fmt.Println("proxy-subs-backend")
-
-	// parse flags
-	configPath := flag.String("config", "proxy-subs-backend.json", "path to proxy subs config file")
+	listenAddr := flag.String("listen", "0.0.0.0:8080", "HTTP listen address")
+	databasePath := flag.String("db", "data/proxy-subs.db", "SQLite database path")
+	webDir := flag.String("web-dir", "web", "directory containing the web console")
+	debugMode := flag.Bool("debug", false, "enable Gin debug mode")
 	flag.Parse()
 
-	// Config
-	serverConfig := new(SubsServerConfig)
-	err := serverConfig.LoadJsonConfig(*configPath)
+	if !*debugMode {
+		setReleaseMode()
+	}
+
+	store, err := OpenStore(*databasePath)
 	if err != nil {
-		fmt.Printf("Error parsing config file: %s\n", err)
+		fmt.Fprintf(os.Stderr, "open database: %v\n", err)
 		os.Exit(1)
 	}
-	if serverConfig.DebugMode {
-		serverConfig.ShowConfig()
-	}
+	defer store.Close()
 
-	// TokenValidator
-	tokenManager := NewTokenManager()
-	err = tokenManager.LoadTokenFromFile(serverConfig.TokenFilePath)
+	server, err := NewSubsServer(store, *webDir)
 	if err != nil {
-		fmt.Printf("Error parsing token file: %s\n", err)
+		fmt.Fprintf(os.Stderr, "initialize server: %v\n", err)
 		os.Exit(1)
 	}
 
-	// API switch
-	apiSwitch := NewApiSwitch(serverConfig.EnableApiWhenStart)
-
-	// Server
-	subsServer := NewSubsServer(serverConfig, tokenManager, apiSwitch)
-	subsServer.StartServer()
-
+	log.Printf("proxy-subs-backend listening on %s (database: %s)", *listenAddr, *databasePath)
+	if err := server.StartServer(*listenAddr); err != nil {
+		fmt.Fprintf(os.Stderr, "start server: %v\n", err)
+		os.Exit(1)
+	}
 }

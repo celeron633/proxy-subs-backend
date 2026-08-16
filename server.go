@@ -1,146 +1,438 @@
 package main
 
 import (
+	"crypto/sha256"
+	"crypto/subtle"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
 
+const sessionCookieName = "proxy_subs_session"
+
 type SubsServer struct {
-	Router       *gin.Engine
-	Config       *SubsServerConfig
-	TokenManager *TokenManager
-	ApiSwitch    *ApiSwitch
+	Router *gin.Engine
+	Store  *Store
+	webDir string
 }
 
-// subscribe API logic handler
-func (s *SubsServer) apiHandler(c *gin.Context) {
-	if !s.ApiSwitch.IsEnabled() {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"code": "503", "message": "api switch is disabled"})
-		return
+type credentialsRequest struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
+type switchRequest struct {
+	Enabled *bool `json:"enabled"`
+}
+
+type subscriptionRequest struct {
+	Name     string `json:"name"`
+	URLPath  string `json:"url_path"`
+	FilePath string `json:"file_path"`
+	Token    string `json:"token"`
+	Note     string `json:"note"`
+	Enabled  *bool  `json:"enabled"`
+}
+
+func setReleaseMode() {
+	gin.SetMode(gin.ReleaseMode)
+}
+
+func NewSubsServer(store *Store, webDir string) (*SubsServer, error) {
+	if store == nil {
+		return nil, errors.New("store is required")
+	}
+	for _, page := range []string{"index.html", "dashboard.html"} {
+		pagePath := filepath.Join(webDir, page)
+		if info, err := os.Stat(pagePath); err != nil || info.IsDir() {
+			return nil, fmt.Errorf("web page not found at %s", pagePath)
+		}
 	}
 
-	apiPath := c.Param("apiPath")
-	token := c.Query("token")
+	router := gin.New()
+	router.Use(gin.Logger(), gin.Recovery(), securityHeaders())
+	server := &SubsServer{Router: router, Store: store, webDir: webDir}
+	server.initRoutes()
+	return server, nil
+}
 
-	log.Default().Printf("apiHandler path:[%s], token:[%s]", apiPath, token)
-	if len(apiPath) == 0 || len(token) == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"code": "400", "msg": "param err"})
-		return
-	}
+func (s *SubsServer) StartServer(listenAddr string) error {
+	return s.Router.Run(listenAddr)
+}
 
-	// validate token
-	if s.Config.NeedAuth {
-		if !s.TokenManager.ValidateToken(token) {
-			c.JSON(http.StatusBadRequest, gin.H{"code": "400", "msg": "invalid token"})
+func (s *SubsServer) initRoutes() {
+	s.Router.Static("/assets", filepath.Join(s.webDir, "assets"))
+	s.Router.GET("/favicon.ico", func(c *gin.Context) {
+		c.File(filepath.Join("static", "favicon.ico"))
+	})
+	s.Router.GET("/", func(c *gin.Context) {
+		if _, authenticated := s.currentUsername(c); authenticated {
+			c.Redirect(http.StatusFound, "/dashboard")
 			return
 		}
-	}
-	// download subscribe file
-	subsConfig := s.findSubsConfig(apiPath)
-	if subsConfig == nil {
-		c.JSON(http.StatusBadRequest, gin.H{"code": "400", "msg": fmt.Sprintf("subs not found matched tag:[%s]", apiPath)})
-		return
-	}
+		c.Header("Cache-Control", "no-cache")
+		c.File(filepath.Join(s.webDir, "index.html"))
+	})
+	s.Router.GET("/dashboard", func(c *gin.Context) {
+		if _, authenticated := s.currentUsername(c); !authenticated {
+			c.Redirect(http.StatusFound, "/")
+			return
+		}
+		c.Header("Cache-Control", "no-store")
+		c.File(filepath.Join(s.webDir, "dashboard.html"))
+	})
 
-	// check if file exist
-	expandedPath, err := expandPath(subsConfig.FilePath)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"code": "400", "msg": fmt.Sprintf("error expanding file path for TAG [%s] failed! err: [%s]", subsConfig.Tag, err.Error())})
-		return
-	}
-	_, err = os.Stat(expandedPath)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"code": "400", "msg": fmt.Sprintf("config file for TAG [%s] not exists! err: [%s]", subsConfig.Tag, err.Error())})
-		return
-	}
+	// Keep the existing public subscription URL shape, but match URL paths exactly.
+	s.Router.GET("/api/:apiPath", s.subscriptionHandler)
 
-	// download file
-	c.FileAttachment(expandedPath, subsConfig.Tag)
+	adminAPI := s.Router.Group("/admin/api")
+	adminAPI.Use(noStore(), sameOrigin())
+	adminAPI.GET("/status", s.statusHandler)
+	adminAPI.POST("/setup", s.setupHandler)
+	adminAPI.POST("/login", s.loginHandler)
+
+	authenticated := adminAPI.Group("")
+	authenticated.Use(s.requireSession())
+	authenticated.POST("/logout", s.logoutHandler)
+	authenticated.GET("/dashboard", s.dashboardHandler)
+	authenticated.PUT("/switch", s.switchHandler)
+	authenticated.POST("/subscriptions", s.createSubscriptionHandler)
+	authenticated.PUT("/subscriptions/:id", s.updateSubscriptionHandler)
+	authenticated.DELETE("/subscriptions/:id", s.deleteSubscriptionHandler)
 }
 
-// findSubsConfig finds the matching subscription config by apiPath
-func (s *SubsServer) findSubsConfig(apiPath string) *SubsConfig {
-	for _, config := range s.Config.SubsConfigs {
-		if strings.Contains(apiPath, config.Tag) {
-			log.Default().Printf("apiHandler apiPath:[%s] matched TAG:[%s]", apiPath, config.Tag)
-			return &config
+func (s *SubsServer) statusHandler(c *gin.Context) {
+	initialized, err := s.Store.Initialized(c.Request.Context())
+	if err != nil {
+		internalError(c, err)
+		return
+	}
+	username, authenticated := s.currentUsername(c)
+	c.JSON(http.StatusOK, gin.H{
+		"initialized":   initialized,
+		"authenticated": authenticated,
+		"username":      username,
+	})
+}
+
+func (s *SubsServer) setupHandler(c *gin.Context) {
+	var request credentialsRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		badRequest(c, "请输入用户名和密码")
+		return
+	}
+	if err := validateCredentials(request.Username, request.Password); err != nil {
+		badRequest(c, err.Error())
+		return
+	}
+	if err := s.Store.CreateAdmin(c.Request.Context(), strings.TrimSpace(request.Username), request.Password); err != nil {
+		if errors.Is(err, ErrAlreadyInitialized) {
+			c.JSON(http.StatusConflict, gin.H{"error": "管理员已经初始化，请直接登录"})
+			return
+		}
+		internalError(c, err)
+		return
+	}
+	s.startSession(c, strings.TrimSpace(request.Username))
+}
+
+func (s *SubsServer) loginHandler(c *gin.Context) {
+	var request credentialsRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		badRequest(c, "请输入用户名和密码")
+		return
+	}
+	username, err := s.Store.Authenticate(c.Request.Context(), strings.TrimSpace(request.Username), request.Password)
+	if err != nil {
+		if errors.Is(err, ErrInvalidCredentials) {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "用户名或密码不正确"})
+			return
+		}
+		internalError(c, err)
+		return
+	}
+	s.startSession(c, username)
+}
+
+func (s *SubsServer) startSession(c *gin.Context, username string) {
+	rawToken, err := randomToken(32)
+	if err != nil {
+		internalError(c, err)
+		return
+	}
+	expiresAt := time.Now().Add(7 * 24 * time.Hour)
+	if err := s.Store.CreateSession(c.Request.Context(), hashToken(rawToken), expiresAt); err != nil {
+		internalError(c, err)
+		return
+	}
+	c.SetSameSite(http.SameSiteStrictMode)
+	c.SetCookie(sessionCookieName, rawToken, int((7 * 24 * time.Hour).Seconds()), "/", "", c.Request.TLS != nil, true)
+	c.JSON(http.StatusOK, gin.H{"username": username})
+}
+
+func (s *SubsServer) logoutHandler(c *gin.Context) {
+	if rawToken, err := c.Cookie(sessionCookieName); err == nil {
+		_ = s.Store.DeleteSession(c.Request.Context(), hashToken(rawToken))
+	}
+	c.SetSameSite(http.SameSiteStrictMode)
+	c.SetCookie(sessionCookieName, "", -1, "/", "", c.Request.TLS != nil, true)
+	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+func (s *SubsServer) dashboardHandler(c *gin.Context) {
+	enabled, err := s.Store.APIEnabled(c.Request.Context())
+	if err != nil {
+		internalError(c, err)
+		return
+	}
+	subscriptions, err := s.Store.ListSubscriptions(c.Request.Context())
+	if err != nil {
+		internalError(c, err)
+		return
+	}
+	views := make([]SubscriptionView, 0, len(subscriptions))
+	for _, subscription := range subscriptions {
+		views = append(views, makeSubscriptionView(subscription))
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"username":      c.GetString("username"),
+		"api_enabled":   enabled,
+		"subscriptions": views,
+	})
+}
+
+func (s *SubsServer) switchHandler(c *gin.Context) {
+	var request switchRequest
+	if err := c.ShouldBindJSON(&request); err != nil || request.Enabled == nil {
+		badRequest(c, "开关状态无效")
+		return
+	}
+	if err := s.Store.SetAPIEnabled(c.Request.Context(), *request.Enabled); err != nil {
+		internalError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"enabled": *request.Enabled})
+}
+
+func (s *SubsServer) createSubscriptionHandler(c *gin.Context) {
+	var request subscriptionRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		badRequest(c, "订阅配置格式不正确")
+		return
+	}
+	subscription, plainToken, err := subscriptionFromRequest(request, nil)
+	if err != nil {
+		badRequest(c, err.Error())
+		return
+	}
+	created, err := s.Store.CreateSubscription(c.Request.Context(), subscription)
+	if err != nil {
+		handleStoreError(c, err)
+		return
+	}
+	c.JSON(http.StatusCreated, gin.H{"subscription": makeSubscriptionView(created), "token": plainToken})
+}
+
+func (s *SubsServer) updateSubscriptionHandler(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || id <= 0 {
+		badRequest(c, "订阅 ID 无效")
+		return
+	}
+	existing, err := s.Store.SubscriptionByID(c.Request.Context(), id)
+	if err != nil {
+		handleStoreError(c, err)
+		return
+	}
+	var request subscriptionRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		badRequest(c, "订阅配置格式不正确")
+		return
+	}
+	updated, plainToken, err := subscriptionFromRequest(request, &existing)
+	if err != nil {
+		badRequest(c, err.Error())
+		return
+	}
+	updated.ID = id
+	updated, err = s.Store.UpdateSubscription(c.Request.Context(), updated)
+	if err != nil {
+		handleStoreError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"subscription": makeSubscriptionView(updated), "token": plainToken})
+}
+
+func (s *SubsServer) deleteSubscriptionHandler(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || id <= 0 {
+		badRequest(c, "订阅 ID 无效")
+		return
+	}
+	if err := s.Store.DeleteSubscription(c.Request.Context(), id); err != nil {
+		handleStoreError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+func (s *SubsServer) subscriptionHandler(c *gin.Context) {
+	enabled, err := s.Store.APIEnabled(c.Request.Context())
+	if err != nil {
+		internalError(c, err)
+		return
+	}
+	if !enabled {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "订阅服务当前已暂停"})
+		return
+	}
+
+	subscription, err := s.Store.SubscriptionByURLPath(c.Request.Context(), c.Param("apiPath"))
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "订阅不存在"})
+			return
+		}
+		internalError(c, err)
+		return
+	}
+	if !subscription.Enabled {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "该订阅当前已停用"})
+		return
+	}
+
+	token := c.Query("token")
+	if token == "" {
+		if authorization := c.GetHeader("Authorization"); strings.HasPrefix(authorization, "Bearer ") {
+			token = strings.TrimSpace(strings.TrimPrefix(authorization, "Bearer "))
 		}
 	}
-	return nil
-}
-
-func (s *SubsServer) initRoute() {
-	// api url
-	s.Router.GET("/api/:apiPath", s.apiHandler)
-
-	// index
-	s.Router.GET("/", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{
-			"msg":  "hello world",
-			"code": 200,
-		})
-	})
-
-	// switch
-	switchGroup := s.Router.Group("/switch")
-	switchGroup.Match([]string{"GET", "POST"}, "/status", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{
-			"msg":  "switch status",
-			"code": 200,
-			"data": strings.ToLower(strconv.FormatBool(s.ApiSwitch.IsEnabled())),
-		})
-	})
-	switchGroup.Match([]string{"GET", "POST"}, "/on", func(c *gin.Context) {
-		s.ApiSwitch.Enable()
-		c.JSON(http.StatusOK, gin.H{
-			"msg":  "switch enabled",
-			"code": 200,
-		})
-	})
-	switchGroup.Match([]string{"GET", "POST"}, "/off", func(c *gin.Context) {
-		s.ApiSwitch.Disable()
-		c.JSON(http.StatusOK, gin.H{
-			"msg":  "switch disabled",
-			"code": 200,
-		})
-	})
-
-	// favicon.ico handler
-	s.Router.StaticFile("/favicon.ico", "./static/favicon.ico")
-}
-
-func (s *SubsServer) init() {
-	if s.Config == nil || s.TokenManager == nil {
-		panic("SubsConfig or TokenManager is nil")
+	candidate := sha256.Sum256([]byte(token))
+	if token == "" || subtle.ConstantTimeCompare(candidate[:], subscription.TokenHash) != 1 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "token 无效"})
+		return
 	}
 
-	s.initRoute()
-
-	lAddr := s.Config.ListenHost + ":" + strconv.Itoa(s.Config.ListenPort)
-	log.Default().Println("SubsServer init listening on " + lAddr)
-	err := s.Router.Run(lAddr)
+	expandedPath, err := expandPath(subscription.FilePath)
 	if err != nil {
-		panic(err)
+		log.Printf("expand subscription file path for id %d: %v", subscription.ID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "订阅文件路径无效"})
+		return
+	}
+	info, err := os.Stat(expandedPath)
+	if err != nil || info.IsDir() {
+		log.Printf("read subscription file for id %d: %v", subscription.ID, err)
+		c.JSON(http.StatusNotFound, gin.H{"error": "订阅文件不存在或不可读取"})
+		return
+	}
+	c.FileAttachment(expandedPath, filepath.Base(expandedPath))
+}
+
+func (s *SubsServer) requireSession() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		username, ok := s.currentUsername(c)
+		if !ok {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "登录已失效，请重新登录"})
+			return
+		}
+		c.Set("username", username)
+		c.Next()
 	}
 }
 
-func (s *SubsServer) StartServer() {
-	s.init()
+func (s *SubsServer) currentUsername(c *gin.Context) (string, bool) {
+	rawToken, err := c.Cookie(sessionCookieName)
+	if err != nil || rawToken == "" {
+		return "", false
+	}
+	username, err := s.Store.SessionUsername(c.Request.Context(), hashToken(rawToken), time.Now())
+	return username, err == nil
 }
 
-func NewSubsServer(c *SubsServerConfig, t *TokenManager, a *ApiSwitch) *SubsServer {
-	server := SubsServer{
-		Router:       gin.Default(),
-		Config:       c,
-		TokenManager: t,
-		ApiSwitch:    a,
+func securityHeaders() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if c.Request.URL.Path == "/" || c.Request.URL.Path == "/dashboard" || c.Request.URL.Path == "/favicon.ico" || strings.HasPrefix(c.Request.URL.Path, "/assets/") {
+			c.Header("Cache-Control", "no-cache")
+		}
+		c.Header("X-Content-Type-Options", "nosniff")
+		c.Header("X-Frame-Options", "DENY")
+		c.Header("Referrer-Policy", "same-origin")
+		c.Header("Content-Security-Policy", "default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'")
+		c.Next()
 	}
+}
 
-	return &server
+func noStore() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Header("Cache-Control", "no-store")
+		c.Next()
+	}
+}
+
+func sameOrigin() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if c.Request.Method == http.MethodGet || c.Request.Method == http.MethodHead || c.Request.Method == http.MethodOptions {
+			c.Next()
+			return
+		}
+		origin := c.GetHeader("Origin")
+		if origin == "" {
+			c.Next()
+			return
+		}
+		parsed, err := url.Parse(origin)
+		if err != nil || !strings.EqualFold(parsed.Host, c.Request.Host) {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "请求来源无效"})
+			return
+		}
+		c.Next()
+	}
+}
+
+func badRequest(c *gin.Context, message string) {
+	c.JSON(http.StatusBadRequest, gin.H{"error": message})
+}
+
+func internalError(c *gin.Context, err error) {
+	log.Printf("request failed: %v", err)
+	c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器内部错误"})
+}
+
+func handleStoreError(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, ErrNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": "订阅不存在"})
+	case errors.Is(err, ErrDuplicateURLPath):
+		c.JSON(http.StatusConflict, gin.H{"error": "这个 URL 标识已经被使用"})
+	default:
+		internalError(c, err)
+	}
+}
+
+func makeSubscriptionView(subscription Subscription) SubscriptionView {
+	view := SubscriptionView{Subscription: subscription, TokenConfigured: len(subscription.TokenHash) > 0}
+	view.TokenHash = nil
+	expandedPath, err := expandPath(subscription.FilePath)
+	if err != nil {
+		view.FileStatus = "invalid"
+		return view
+	}
+	info, err := os.Stat(expandedPath)
+	if err != nil || info.IsDir() {
+		view.FileStatus = "missing"
+		return view
+	}
+	view.FileStatus = "ready"
+	view.FileSize = info.Size()
+	view.FileModifiedAt = info.ModTime().Unix()
+	return view
 }

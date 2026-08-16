@@ -6,7 +6,8 @@
 APP_NAME="proxy-subs-backend"
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_BIN="$APP_DIR/$APP_NAME"
-CONFIG_FILE="$APP_DIR/config/config.json"
+DB_FILE="$APP_DIR/data/proxy-subs.db"
+WEB_DIR="$APP_DIR/web"
 LOG_FILE="$APP_DIR/nohup.out"
 
 # Check if binary exists
@@ -15,9 +16,9 @@ if [ ! -f "$APP_BIN" ]; then
     exit 1
 fi
 
-# Check if config file exists
-if [ ! -f "$CONFIG_FILE" ]; then
-    echo "Error: Config file $CONFIG_FILE not found"
+# The web console stays outside the binary so it can be updated independently.
+if [ ! -f "$WEB_DIR/index.html" ]; then
+    echo "Error: Web console $WEB_DIR/index.html not found"
     exit 1
 fi
 
@@ -29,7 +30,8 @@ fi
 
 # Start the application with nohup
 echo "Starting $APP_NAME..."
-nohup "$APP_BIN" -config "$CONFIG_FILE" > "$LOG_FILE" 2>&1 &
+mkdir -p "$APP_DIR/data"
+nohup "$APP_BIN" -db "$DB_FILE" -web-dir "$WEB_DIR" > "$LOG_FILE" 2>&1 &
 
 # Get the PID
 PID=$!

@@ -14,8 +14,8 @@ build:
 release: all
 	mkdir -p $(DIST_DIR)/$(BINARY_NAME)
 	cp $(BUILD_DIR)/$(BINARY_NAME) $(DIST_DIR)/$(BINARY_NAME)/
+	cp -r web $(DIST_DIR)/$(BINARY_NAME)/
 	cp -r static $(DIST_DIR)/$(BINARY_NAME)/
-	cp -r config $(DIST_DIR)/$(BINARY_NAME)/
 	cp start.sh $(DIST_DIR)/$(BINARY_NAME)/
 	cp stop.sh $(DIST_DIR)/$(BINARY_NAME)/
 	chmod +x $(DIST_DIR)/$(BINARY_NAME)/start.sh

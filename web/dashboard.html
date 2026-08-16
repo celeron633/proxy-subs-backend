@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#f4f2ec">
+  <title>订阅管理</title>
+  <link rel="icon" href="/favicon.ico">
+  <link rel="stylesheet" href="/assets/shared.css">
+  <link rel="stylesheet" href="/assets/dashboard.css">
+  <script src="/assets/shared.js" defer></script>
+  <script src="/assets/dashboard.js" defer></script>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <a class="wordmark" href="/dashboard" aria-label="管理控制台首页">
+        <span class="brand-mark">M</span>
+        <span>管理控制台</span>
+      </a>
+      <div class="account">
+        <span id="account-name"></span>
+        <button id="logout-button" class="button button-quiet" type="button">退出</button>
+      </div>
+    </header>
+
+    <main class="dashboard">
+      <section class="hero-row">
+        <div>
+          <p class="eyebrow">SUBSCRIPTIONS</p>
+          <h1>订阅管理</h1>
+          <p class="muted">集中管理公开地址、本地文件和访问 token。</p>
+        </div>
+        <button id="add-button" class="button button-primary" type="button"><span aria-hidden="true">＋</span> 新建订阅</button>
+      </section>
+
+      <section class="overview" aria-label="服务概览">
+        <article class="switch-card">
+          <div>
+            <div class="card-heading">
+              <span id="service-dot" class="status-dot"></span>
+              <h2>订阅服务</h2>
+            </div>
+            <p id="service-copy" class="muted">所有公开订阅入口均可访问</p>
+          </div>
+          <label class="switch">
+            <input id="api-switch" type="checkbox" role="switch" aria-label="订阅服务总开关">
+            <span class="switch-track"><span class="switch-thumb"></span></span>
+          </label>
+        </article>
+        <article class="metric-card">
+          <span class="metric-label">订阅</span>
+          <strong id="total-count">0</strong>
+          <span class="muted">条配置</span>
+        </article>
+        <article class="metric-card">
+          <span class="metric-label">文件状态</span>
+          <strong id="ready-count">0</strong>
+          <span class="muted">个可读取</span>
+        </article>
+      </section>
+
+      <section class="content-card">
+        <div class="content-heading">
+          <div>
+            <h2>全部订阅</h2>
+            <p class="muted">URL 标识与本地文件一一对应</p>
+          </div>
+          <label class="search-field">
+            <span aria-hidden="true">⌕</span>
+            <input id="search-input" type="search" placeholder="搜索名称、URL 或文件" aria-label="搜索订阅">
+          </label>
+        </div>
+        <div id="subscription-list" class="subscription-list"></div>
+        <div id="empty-state" class="empty-state" hidden>
+          <div class="empty-icon">↗</div>
+          <h3>创建第一条订阅</h3>
+          <p>连接一个本地文件，系统会生成独立的访问 token。</p>
+          <button class="button button-primary" data-action="add" type="button">新建订阅</button>
+        </div>
+        <div id="no-results" class="empty-state compact" hidden>
+          <h3>没有匹配结果</h3>
+          <p>换一个关键词试试。</p>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div id="editor-backdrop" class="modal-backdrop" hidden>
+    <section class="modal" role="dialog" aria-modal="true" aria-labelledby="editor-title">
+      <div class="modal-heading">
+        <div>
+          <p class="eyebrow">SUBSCRIPTION</p>
+          <h2 id="editor-title">新建订阅</h2>
+        </div>
+        <button class="icon-button" data-action="close-editor" type="button" aria-label="关闭">×</button>
+      </div>
+      <form id="editor-form" novalidate>
+        <input id="subscription-id" type="hidden">
+        <div class="form-grid">
+          <label>
+            <span>订阅名称</span>
+            <input id="subscription-name" maxlength="80" placeholder="例如：Clash 主配置" required>
+          </label>
+          <label>
+            <span>URL 标识</span>
+            <div class="input-prefix"><span>/api/</span><input id="subscription-url" maxlength="64" placeholder="clash-main" required></div>
+            <small>字母、数字、点、横线或下划线</small>
+          </label>
+          <label class="span-two">
+            <span>本地文件路径</span>
+            <input id="subscription-file" maxlength="1024" placeholder="/etc/subscriptions/clash.yaml" required>
+            <small>支持绝对路径和 ~/ 开头的用户目录</small>
+          </label>
+          <label class="span-two">
+            <span>访问 token</span>
+            <div class="token-input"><input id="subscription-token" type="password" minlength="8" maxlength="128" placeholder="留空则自动生成"><button id="toggle-token" class="inside-button" type="button">显示</button></div>
+            <small id="token-help">创建后仅展示一次，请及时保存</small>
+          </label>
+          <label class="span-two">
+            <span>备注 <i>可选</i></span>
+            <textarea id="subscription-note" maxlength="500" rows="3" placeholder="用途、客户端或更新说明"></textarea>
+          </label>
+        </div>
+        <div class="enabled-row">
+          <div>
+            <strong>立即启用</strong>
+            <p>关闭后，这条订阅地址将暂时不可用。</p>
+          </div>
+          <label class="switch">
+            <input id="subscription-enabled" type="checkbox" role="switch" checked aria-label="立即启用订阅">
+            <span class="switch-track"><span class="switch-thumb"></span></span>
+          </label>
+        </div>
+        <p id="editor-error" class="form-error" role="alert"></p>
+        <div class="modal-actions">
+          <button class="button button-secondary" data-action="close-editor" type="button">取消</button>
+          <button id="save-button" class="button button-primary" type="submit">保存订阅</button>
+        </div>
+      </form>
+    </section>
+  </div>
+
+  <div id="token-backdrop" class="modal-backdrop" hidden>
+    <section class="modal token-modal" role="dialog" aria-modal="true" aria-labelledby="token-title">
+      <div class="success-mark">✓</div>
+      <p class="eyebrow">TOKEN CREATED</p>
+      <h2 id="token-title">订阅已经可以使用</h2>
+      <p class="muted">这是 token 的唯一一次完整展示。复制完整地址并保存在安全的位置。</p>
+      <label>
+        <span>完整订阅地址</span>
+        <div class="copy-field"><input id="created-url" readonly><button id="copy-created-url" class="button button-secondary" type="button">复制</button></div>
+      </label>
+      <button class="button button-primary button-wide" data-action="close-token" type="button">我已保存</button>
+    </section>
+  </div>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+</body>
+</html>

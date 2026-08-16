@@ -1,0 +1,40 @@
+:root {
+  --paper: #f5f6f7;
+  --panel: #ffffff;
+  --line: #dfe2e4;
+  --accent: #3f5666;
+  --accent-dark: #30434f;
+}
+
+.auth-page { display: grid; place-items: center; color: #283036; }
+.auth-shell { width: 100%; padding: 32px 20px; }
+.auth-card {
+  width: min(390px, 100%);
+  margin: 0 auto;
+  padding: 34px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  box-shadow: 0 8px 28px rgba(34, 44, 50, .06);
+}
+.system-mark {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  margin-bottom: 26px;
+  place-items: center;
+  border-radius: 8px;
+  background: #e9edf0;
+  color: #526471;
+  font-size: 14px;
+  font-weight: 750;
+}
+.auth-card h1 { margin-bottom: 9px; font-size: 25px; letter-spacing: -.03em; }
+.auth-card > .muted { margin-bottom: 28px; font-size: 13px; }
+.auth-card form { display: grid; gap: 18px; }
+.auth-foot { margin: 26px 0 0; color: #9aa0a4; font-size: 11px; text-align: center; }
+
+@media (max-width: 480px) {
+  .auth-shell { padding: 18px; }
+  .auth-card { padding: 28px 24px; }
+}

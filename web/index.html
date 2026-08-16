@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#f5f6f7">
+  <title>管理后台</title>
+  <link rel="icon" href="/favicon.ico">
+  <link rel="stylesheet" href="/assets/shared.css">
+  <link rel="stylesheet" href="/assets/auth.css">
+  <script src="/assets/shared.js" defer></script>
+  <script src="/assets/auth.js" defer></script>
+</head>
+<body class="auth-page">
+  <main class="auth-shell">
+    <section class="auth-card" aria-labelledby="auth-title">
+      <div class="system-mark" aria-hidden="true">M</div>
+      <h1 id="auth-title">登录</h1>
+      <p id="auth-description" class="muted">请输入管理员账号以继续。</p>
+
+      <form id="auth-form" novalidate>
+        <label>
+          <span>用户名</span>
+          <input id="username" name="username" autocomplete="username" minlength="3" maxlength="32" required autofocus>
+        </label>
+        <label>
+          <span>密码</span>
+          <input id="password" name="password" type="password" autocomplete="current-password" minlength="8" maxlength="72" required>
+        </label>
+        <p id="auth-error" class="form-error" role="alert"></p>
+        <button id="auth-submit" class="button button-primary button-wide" type="submit">登录</button>
+      </form>
+
+      <p class="auth-foot">管理后台</p>
+    </section>
+  </main>
+</body>
+</html>
