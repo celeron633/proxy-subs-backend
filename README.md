@@ -27,7 +27,7 @@ go build -o proxy-subs-backend .
 
 | 参数 | 默认值 | 说明 |
 | --- | --- | --- |
-| `-listen` | `0.0.0.0:8080` | HTTP 监听地址 |
+| `-listen` | `127.0.0.1:8080` | HTTP 监听地址 |
 | `-db` | `data/proxy-subs.db` | SQLite 数据库文件 |
 | `-web-dir` | `web` | 网页文件目录 |
 | `-debug` | `false` | 是否启用 Gin 调试模式和 HTTP 请求日志 |

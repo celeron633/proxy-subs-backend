@@ -8,7 +8,7 @@ import (
 )
 
 func main() {
-	listenAddr := flag.String("listen", "0.0.0.0:8080", "HTTP listen address")
+	listenAddr := flag.String("listen", "127.0.0.1:8080", "HTTP listen address")
 	databasePath := flag.String("db", "data/proxy-subs.db", "SQLite database path")
 	webDir := flag.String("web-dir", "web", "directory containing the web console")
 	debugMode := flag.Bool("debug", false, "enable Gin debug mode and HTTP request logging")
