@@ -75,7 +75,6 @@ jobs:
             dist/proxy-subs-backend-linux-amd64.tar.gz
             dist/checksums.txt
           if-no-files-found: error
-          archive: false
 
       - name: Publish GitHub release assets
         if: github.ref_type == 'tag'
