@@ -79,7 +79,7 @@ go vet ./...
 
 ## GitHub Actions 打包
 
-工作流支持手动运行，也会在推送 `v*` 标签时自动运行，只构建以下两个目标：
+工作流支持手动运行；每次推送到 `master` 都会自动构建最新包，推送 `v*` 标签时还会创建 GitHub Release。只构建以下两个目标：
 
 - `proxy-subs-backend-windows-amd64.zip`
 - `proxy-subs-backend-linux-amd64.tar.gz`

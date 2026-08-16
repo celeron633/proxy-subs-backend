@@ -3,6 +3,8 @@ name: Build release packages
 on:
   workflow_dispatch:
   push:
+    branches:
+      - "master"
     tags:
       - "v*"
 
