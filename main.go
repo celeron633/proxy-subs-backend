@@ -11,7 +11,7 @@ func main() {
 	listenAddr := flag.String("listen", "0.0.0.0:8080", "HTTP listen address")
 	databasePath := flag.String("db", "data/proxy-subs.db", "SQLite database path")
 	webDir := flag.String("web-dir", "web", "directory containing the web console")
-	debugMode := flag.Bool("debug", false, "enable Gin debug mode")
+	debugMode := flag.Bool("debug", false, "enable Gin debug mode and HTTP request logging")
 	flag.Parse()
 
 	if !*debugMode {
@@ -25,7 +25,7 @@ func main() {
 	}
 	defer store.Close()
 
-	server, err := NewSubsServer(store, *webDir)
+	server, err := NewSubsServer(store, *webDir, *debugMode)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "initialize server: %v\n", err)
 		os.Exit(1)

@@ -47,7 +47,7 @@ func setReleaseMode() {
 	gin.SetMode(gin.ReleaseMode)
 }
 
-func NewSubsServer(store *Store, webDir string) (*SubsServer, error) {
+func NewSubsServer(store *Store, webDir string, requestLogging bool) (*SubsServer, error) {
 	if store == nil {
 		return nil, errors.New("store is required")
 	}
@@ -59,7 +59,10 @@ func NewSubsServer(store *Store, webDir string) (*SubsServer, error) {
 	}
 
 	router := gin.New()
-	router.Use(gin.Logger(), gin.Recovery(), securityHeaders())
+	if requestLogging {
+		router.Use(gin.Logger())
+	}
+	router.Use(gin.Recovery(), securityHeaders())
 	server := &SubsServer{Router: router, Store: store, webDir: webDir}
 	server.initRoutes()
 	return server, nil

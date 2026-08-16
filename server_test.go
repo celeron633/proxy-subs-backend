@@ -23,7 +23,7 @@ func newTestServer(t *testing.T) (*Store, *testClient) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	server, err := NewSubsServer(store, "web")
+	server, err := NewSubsServer(store, "web", false)
 	if err != nil {
 		store.Close()
 		t.Fatal(err)

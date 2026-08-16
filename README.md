@@ -30,7 +30,7 @@ go build -o proxy-subs-backend .
 | `-listen` | `0.0.0.0:8080` | HTTP 监听地址 |
 | `-db` | `data/proxy-subs.db` | SQLite 数据库文件 |
 | `-web-dir` | `web` | 网页文件目录 |
-| `-debug` | `false` | 是否显示 Gin 调试日志 |
+| `-debug` | `false` | 是否启用 Gin 调试模式和 HTTP 请求日志 |
 
 例如：
 
