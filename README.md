@@ -82,8 +82,8 @@ go vet ./...
 工作流支持手动运行；每次推送到 `master` 都会自动构建最新包，推送 `v*` 标签时还会创建 GitHub Release。只构建以下两个目标：
 
 - `proxy-subs-backend-windows-amd64.zip`
-- `proxy-subs-backend-linux-amd64.tar.gz`
+- `proxy-subs-backend-linux-amd64.zip`
 
-两个压缩包都包含程序、`web/`、`static/`、README 和 LICENSE；Linux 包还包含启动和停止脚本。标签构建会同时创建 GitHub Release，手动构建则可从 Actions Artifacts 下载。
+两个平台会分别上传为独立的 Actions Artifact。压缩包都包含程序、`web/`、`static/`、README 和 LICENSE；Linux 包还包含启动和停止脚本。标签构建会同时创建 GitHub Release。
 
 项目不会把网页资源嵌入 ELF 或 EXE，因此运行时必须保留 `web/` 目录。
