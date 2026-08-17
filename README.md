@@ -7,7 +7,7 @@
 - 首次打开网页时创建管理员账号，之后必须登录才能管理
 - 登录使用 7 位数字与大小写字母验证码，验证码一次性使用并在 5 分钟后过期
 - 登录与订阅 API 分别提供按 IP 的连续错误保护，安全开关可在独立设置页管理
-- 在网页中新增、编辑、删除订阅，配置 URL 标识和本地文件
+- 在网页中新增、编辑、删除订阅，可从限定的服务器目录中选择本地文件
 - 每条订阅使用独立 token；数据库只保存 token 的 SHA-256 哈希
 - 全局服务开关和单条订阅开关均可在网页中操作，并持久化到 SQLite
 - 管理员密码使用 bcrypt 保存，登录会话有效期为 7 天
@@ -32,13 +32,16 @@ go build -o proxy-subs-backend .
 | `-listen` | `127.0.0.1:8080` | HTTP 监听地址 |
 | `-db` | `data/proxy-subs.db` | SQLite 数据库文件 |
 | `-web-dir` | `web` | 网页文件目录 |
+| `-file-root` | `.` | 服务器文件选择器允许浏览的根目录 |
 | `-debug` | `false` | 是否启用 Gin 调试模式和 HTTP 请求日志 |
 
 例如：
 
 ```bash
-./proxy-subs-backend -listen 127.0.0.1:9000 -db /var/lib/proxy-subs/app.db -web-dir /opt/proxy-subs/web
+./proxy-subs-backend -listen 127.0.0.1:9000 -db /var/lib/proxy-subs/app.db -web-dir /opt/proxy-subs/web -file-root /etc/subscriptions
 ```
+
+`-file-root` 只限定网页文件选择器的浏览范围。已有订阅和手动输入的文件路径仍可位于其他目录，升级后不会失效。文件选择接口需要管理员登录，并会忽略指向根目录以外的符号链接。
 
 Linux 下也可以使用仓库中的脚本：
 
@@ -46,6 +49,12 @@ Linux 下也可以使用仓库中的脚本：
 make release
 ./start.sh
 ./stop.sh
+```
+
+`start.sh` 默认将程序目录作为文件选择根目录，也可在启动时指定：
+
+```bash
+FILE_ROOT=/etc/subscriptions ./start.sh
 ```
 
 Windows 下可在 PowerShell 中运行：

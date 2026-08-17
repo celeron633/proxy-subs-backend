@@ -6,8 +6,12 @@ const state = {
 };
 
 const editorBackdrop = $("#editor-backdrop");
+const fileBrowserBackdrop = $("#file-browser-backdrop");
 const tokenBackdrop = $("#token-backdrop");
 const editorForm = $("#editor-form");
+let fileBrowserCurrentPath = "";
+let fileBrowserParentPath = null;
+let fileBrowserLoadSequence = 0;
 
 async function loadDashboard() {
   try {
@@ -77,6 +81,7 @@ function subscriptionRow(item) {
 
 function openEditor(item = null) {
   editorForm.reset();
+  fileBrowserBackdrop.hidden = true;
   $("#subscription-id").value = item?.id || "";
   $("#subscription-name").value = item?.name || "";
   $("#subscription-url").value = item?.url_path || "";
@@ -95,8 +100,85 @@ function openEditor(item = null) {
 }
 
 function closeEditor() {
+  fileBrowserLoadSequence += 1;
+  fileBrowserBackdrop.hidden = true;
   editorBackdrop.hidden = true;
   document.body.style.overflow = "";
+}
+
+function openFileBrowser() {
+  fileBrowserBackdrop.hidden = false;
+  document.body.style.overflow = "hidden";
+  loadFileDirectory(fileBrowserCurrentPath);
+}
+
+function closeFileBrowser() {
+  fileBrowserLoadSequence += 1;
+  fileBrowserBackdrop.hidden = true;
+  document.body.style.overflow = editorBackdrop.hidden ? "" : "hidden";
+  $("#subscription-file").focus();
+}
+
+async function loadFileDirectory(relativePath) {
+  const loadSequence = ++fileBrowserLoadSequence;
+  const list = $("#file-browser-list");
+  $("#file-browser-error").textContent = "";
+  $("#file-browser-empty").hidden = true;
+  $("#file-browser-current").textContent = "正在读取…";
+  $("#file-browser-up").disabled = true;
+  list.setAttribute("aria-busy", "true");
+  list.replaceChildren();
+
+  try {
+    const query = new URLSearchParams({ path: relativePath });
+    const result = await api(`/admin/api/files?${query}`);
+    if (loadSequence !== fileBrowserLoadSequence) return;
+
+    fileBrowserCurrentPath = result.relative_path;
+    fileBrowserParentPath = result.relative_path ? result.parent_path : null;
+    $("#file-browser-root").textContent = result.root;
+    $("#file-browser-current").textContent = result.current_path;
+    $("#file-browser-up").disabled = fileBrowserParentPath === null;
+    list.replaceChildren(...result.entries.map(fileBrowserEntry));
+    $("#file-browser-empty").hidden = result.entries.length !== 0;
+  } catch (error) {
+    if (loadSequence !== fileBrowserLoadSequence) return;
+    if (error.status === 401) {
+      window.location.replace("/");
+      return;
+    }
+    $("#file-browser-current").textContent = "读取失败";
+    $("#file-browser-error").textContent = error.message;
+  } finally {
+    if (loadSequence === fileBrowserLoadSequence) list.removeAttribute("aria-busy");
+  }
+}
+
+function fileBrowserEntry(entry) {
+  const button = document.createElement("button");
+  button.className = "file-browser-entry";
+  button.type = "button";
+  button.dataset.fileBrowserPath = entry.relative_path;
+  button.dataset.absolutePath = entry.path;
+  button.dataset.directory = String(entry.is_directory);
+
+  const kind = document.createElement("span");
+  kind.className = `file-browser-kind${entry.is_directory ? " directory" : ""}`;
+  kind.textContent = entry.is_directory ? "目录" : "文件";
+
+  const copy = document.createElement("span");
+  copy.className = "file-browser-copy";
+  const name = document.createElement("strong");
+  name.textContent = entry.name;
+  const detail = document.createElement("small");
+  detail.textContent = entry.is_directory ? "打开目录" : formatBytes(entry.size);
+  copy.append(name, detail);
+
+  const action = document.createElement("span");
+  action.className = "file-browser-action";
+  action.textContent = entry.is_directory ? "进入 →" : "选择";
+  button.append(kind, copy, action);
+  return button;
 }
 
 function showCreatedToken(item, token) {
@@ -181,6 +263,10 @@ async function logout() {
 
 $("#logout-button").addEventListener("click", logout);
 $("#add-button").addEventListener("click", () => openEditor());
+$("#open-file-browser").addEventListener("click", openFileBrowser);
+$("#file-browser-up").addEventListener("click", () => {
+  if (fileBrowserParentPath !== null) loadFileDirectory(fileBrowserParentPath);
+});
 $("#api-switch").addEventListener("change", toggleAPI);
 $("#search-input").addEventListener("input", (event) => { state.query = event.target.value; renderSubscriptions(); });
 $("#editor-form").addEventListener("submit", saveSubscription);
@@ -194,13 +280,23 @@ $("#copy-created-url").addEventListener("click", () => copyText($("#created-url"
 document.addEventListener("click", (event) => {
   const add = event.target.closest("[data-action='add']");
   const closeEditorButton = event.target.closest("[data-action='close-editor']");
+  const closeFileBrowserButton = event.target.closest("[data-action='close-file-browser']");
   const closeTokenButton = event.target.closest("[data-action='close-token']");
+  const fileEntry = event.target.closest("[data-file-browser-path]");
   const edit = event.target.closest("[data-edit]");
   const remove = event.target.closest("[data-delete]");
   const copy = event.target.closest("[data-copy-url]");
   if (add) openEditor();
   if (closeEditorButton) closeEditor();
+  if (closeFileBrowserButton) closeFileBrowser();
   if (closeTokenButton) closeToken();
+  if (fileEntry) {
+    if (fileEntry.dataset.directory === "true") loadFileDirectory(fileEntry.dataset.fileBrowserPath);
+    else {
+      $("#subscription-file").value = fileEntry.dataset.absolutePath;
+      closeFileBrowser();
+    }
+  }
   if (edit) openEditor(state.dashboard.subscriptions.find((item) => item.id === Number(edit.dataset.edit)));
   if (remove) removeSubscription(Number(remove.dataset.delete));
   if (copy) copyText(`${copy.dataset.copyUrl}?token=YOUR_TOKEN`, "地址模板已复制");
@@ -208,11 +304,13 @@ document.addEventListener("click", (event) => {
 
 document.addEventListener("keydown", (event) => {
   if (event.key !== "Escape") return;
-  if (!tokenBackdrop.hidden) closeToken();
+  if (!fileBrowserBackdrop.hidden) closeFileBrowser();
+  else if (!tokenBackdrop.hidden) closeToken();
   else if (!editorBackdrop.hidden) closeEditor();
 });
 
 editorBackdrop.addEventListener("click", (event) => { if (event.target === editorBackdrop) closeEditor(); });
+fileBrowserBackdrop.addEventListener("click", (event) => { if (event.target === fileBrowserBackdrop) closeFileBrowser(); });
 tokenBackdrop.addEventListener("click", (event) => { if (event.target === tokenBackdrop) closeToken(); });
 
 loadDashboard();

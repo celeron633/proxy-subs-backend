@@ -111,8 +111,11 @@
           </label>
           <label class="span-two">
             <span>本地文件路径</span>
-            <input id="subscription-file" maxlength="1024" placeholder="/etc/subscriptions/clash.yaml" required>
-            <small>支持绝对路径和 ~/ 开头的用户目录</small>
+            <div class="file-path-input">
+              <input id="subscription-file" maxlength="1024" placeholder="/etc/subscriptions/clash.yaml" required>
+              <button id="open-file-browser" class="button button-secondary" type="button">选择服务器文件</button>
+            </div>
+            <small>可手动输入路径，或从服务器允许浏览的目录中选择</small>
           </label>
           <label class="span-two">
             <span>访问 token</span>
@@ -140,6 +143,33 @@
           <button id="save-button" class="button button-primary" type="submit">保存订阅</button>
         </div>
       </form>
+    </section>
+  </div>
+
+  <div id="file-browser-backdrop" class="modal-backdrop file-browser-backdrop" hidden>
+    <section class="modal file-browser-modal" role="dialog" aria-modal="true" aria-labelledby="file-browser-title">
+      <div class="modal-heading">
+        <div>
+          <p class="eyebrow">SERVER FILES</p>
+          <h2 id="file-browser-title">选择服务器文件</h2>
+        </div>
+        <button class="icon-button" data-action="close-file-browser" type="button" aria-label="关闭">×</button>
+      </div>
+
+      <div class="file-browser-root">
+        <span>允许浏览</span>
+        <code id="file-browser-root"></code>
+      </div>
+      <div class="file-browser-toolbar">
+        <button id="file-browser-up" class="button button-secondary" type="button">← 上一级</button>
+        <code id="file-browser-current">正在读取…</code>
+      </div>
+      <div id="file-browser-list" class="file-browser-list" aria-live="polite"></div>
+      <p id="file-browser-empty" class="file-browser-empty" hidden>这个目录中没有可选择的文件。</p>
+      <p id="file-browser-error" class="form-error" role="alert"></p>
+      <div class="modal-actions">
+        <button class="button button-secondary" data-action="close-file-browser" type="button">取消</button>
+      </div>
     </section>
   </div>
 

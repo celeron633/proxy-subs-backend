@@ -20,10 +20,11 @@ import (
 const sessionCookieName = "proxy_subs_session"
 
 type SubsServer struct {
-	Router  *gin.Engine
-	Store   *Store
-	Captcha *CaptchaManager
-	webDir  string
+	Router   *gin.Engine
+	Store    *Store
+	Captcha  *CaptchaManager
+	webDir   string
+	fileRoot string
 }
 
 type credentialsRequest struct {
@@ -50,7 +51,7 @@ func setReleaseMode() {
 	gin.SetMode(gin.ReleaseMode)
 }
 
-func NewSubsServer(store *Store, webDir string, requestLogging bool) (*SubsServer, error) {
+func NewSubsServer(store *Store, webDir, fileRoot string, requestLogging bool) (*SubsServer, error) {
 	if store == nil {
 		return nil, errors.New("store is required")
 	}
@@ -59,6 +60,10 @@ func NewSubsServer(store *Store, webDir string, requestLogging bool) (*SubsServe
 		if info, err := os.Stat(pagePath); err != nil || info.IsDir() {
 			return nil, fmt.Errorf("web page not found at %s", pagePath)
 		}
+	}
+	resolvedFileRoot, err := resolveFileRoot(fileRoot)
+	if err != nil {
+		return nil, fmt.Errorf("resolve file browser root: %w", err)
 	}
 
 	router := gin.New()
@@ -69,7 +74,7 @@ func NewSubsServer(store *Store, webDir string, requestLogging bool) (*SubsServe
 		router.Use(gin.Logger())
 	}
 	router.Use(gin.Recovery(), securityHeaders())
-	server := &SubsServer{Router: router, Store: store, Captcha: NewCaptchaManager(), webDir: webDir}
+	server := &SubsServer{Router: router, Store: store, Captcha: NewCaptchaManager(), webDir: webDir, fileRoot: resolvedFileRoot}
 	server.initRoutes()
 	return server, nil
 }
@@ -123,6 +128,7 @@ func (s *SubsServer) initRoutes() {
 	authenticated.Use(s.requireSession())
 	authenticated.POST("/logout", s.logoutHandler)
 	authenticated.GET("/dashboard", s.dashboardHandler)
+	authenticated.GET("/files", s.fileBrowserHandler)
 	authenticated.PUT("/switch", s.switchHandler)
 	authenticated.GET("/settings/security", s.securitySettingsHandler)
 	authenticated.PUT("/settings/security", s.updateSecuritySettingsHandler)

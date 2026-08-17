@@ -15,9 +15,10 @@ import (
 )
 
 type testClient struct {
-	router  http.Handler
-	cookie  *http.Cookie
-	captcha *CaptchaManager
+	router   http.Handler
+	cookie   *http.Cookie
+	captcha  *CaptchaManager
+	fileRoot string
 }
 
 func newTestServer(t *testing.T) (*Store, *testClient) {
@@ -26,13 +27,14 @@ func newTestServer(t *testing.T) (*Store, *testClient) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	server, err := NewSubsServer(store, "web", false)
+	fileRoot := t.TempDir()
+	server, err := NewSubsServer(store, "web", fileRoot, false)
 	if err != nil {
 		store.Close()
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { store.Close() })
-	return store, &testClient{router: server.Router, captcha: server.Captcha}
+	return store, &testClient{router: server.Router, captcha: server.Captcha, fileRoot: fileRoot}
 }
 
 func (client *testClient) request(t *testing.T, method, path string, body any) *httptest.ResponseRecorder {
@@ -440,6 +442,91 @@ func TestSubscriptionAPIProtectionCountsInvalidPathsAndTokens(t *testing.T) {
 	}
 }
 
+func TestServerFileBrowserIsAuthenticatedAndRestrictedToRoot(t *testing.T) {
+	_, client := newTestServer(t)
+	unauthorized := client.request(t, http.MethodGet, "/admin/api/files", nil)
+	assertStatus(t, unauthorized, http.StatusUnauthorized)
+
+	setup := client.request(t, http.MethodPost, "/admin/api/setup", map[string]any{
+		"username": "operator", "password": "long-enough-password",
+	})
+	assertStatus(t, setup, http.StatusOK)
+	client.rememberSession(t, setup)
+
+	subdirectory := filepath.Join(client.fileRoot, "configs")
+	if err := os.Mkdir(subdirectory, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	rootFile := filepath.Join(client.fileRoot, "root.yaml")
+	if err := os.WriteFile(rootFile, []byte("root: true\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	nestedFile := filepath.Join(subdirectory, "nested.yaml")
+	if err := os.WriteFile(nestedFile, []byte("nested: true\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	outsideFile := filepath.Join(t.TempDir(), "outside.yaml")
+	if err := os.WriteFile(outsideFile, []byte("outside: true\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	symlinkName := "outside-link.yaml"
+	symlinkCreated := os.Symlink(outsideFile, filepath.Join(client.fileRoot, symlinkName)) == nil
+
+	rootResponse := client.request(t, http.MethodGet, "/admin/api/files", nil)
+	assertStatus(t, rootResponse, http.StatusOK)
+	var rootPayload struct {
+		Root         string             `json:"root"`
+		CurrentPath  string             `json:"current_path"`
+		RelativePath string             `json:"relative_path"`
+		ParentPath   string             `json:"parent_path"`
+		Entries      []fileBrowserEntry `json:"entries"`
+	}
+	if err := json.Unmarshal(rootResponse.Body.Bytes(), &rootPayload); err != nil {
+		t.Fatal(err)
+	}
+	if rootPayload.Root != filepath.Clean(client.fileRoot) || rootPayload.CurrentPath != filepath.Clean(client.fileRoot) {
+		t.Fatalf("unexpected browser root: %#v", rootPayload)
+	}
+	if rootPayload.RelativePath != "" || rootPayload.ParentPath != "" {
+		t.Fatalf("root directory must not expose a parent: %#v", rootPayload)
+	}
+	if len(rootPayload.Entries) != 2 {
+		t.Fatalf("expected one directory and one file, got %#v", rootPayload.Entries)
+	}
+	if !rootPayload.Entries[0].IsDirectory || rootPayload.Entries[0].Name != "configs" {
+		t.Fatalf("expected directories to be listed first: %#v", rootPayload.Entries)
+	}
+	if rootPayload.Entries[1].Path != rootFile || rootPayload.Entries[1].RelativePath != "root.yaml" {
+		t.Fatalf("unexpected root file entry: %#v", rootPayload.Entries[1])
+	}
+	if symlinkCreated && strings.Contains(rootResponse.Body.String(), symlinkName) {
+		t.Fatal("a symlink outside the configured root was exposed")
+	}
+
+	nestedResponse := client.request(t, http.MethodGet, "/admin/api/files?path=configs", nil)
+	assertStatus(t, nestedResponse, http.StatusOK)
+	var nestedPayload struct {
+		RelativePath string             `json:"relative_path"`
+		ParentPath   string             `json:"parent_path"`
+		Entries      []fileBrowserEntry `json:"entries"`
+	}
+	if err := json.Unmarshal(nestedResponse.Body.Bytes(), &nestedPayload); err != nil {
+		t.Fatal(err)
+	}
+	if nestedPayload.RelativePath != "configs" || nestedPayload.ParentPath != "" || len(nestedPayload.Entries) != 1 {
+		t.Fatalf("unexpected nested directory response: %#v", nestedPayload)
+	}
+	if nestedPayload.Entries[0].Path != nestedFile || nestedPayload.Entries[0].IsDirectory {
+		t.Fatalf("unexpected nested file entry: %#v", nestedPayload.Entries[0])
+	}
+
+	traversal := client.request(t, http.MethodGet, "/admin/api/files?path=..", nil)
+	assertStatus(t, traversal, http.StatusBadRequest)
+	fileAsDirectory := client.request(t, http.MethodGet, "/admin/api/files?path=root.yaml", nil)
+	assertStatus(t, fileAsDirectory, http.StatusBadRequest)
+}
+
 func TestWebConsoleAndAssetsAreServedFromDisk(t *testing.T) {
 	_, client := newTestServer(t)
 	index := client.request(t, http.MethodGet, "/", nil)
@@ -482,6 +569,9 @@ func TestWebConsoleAndAssetsAreServedFromDisk(t *testing.T) {
 	if !strings.Contains(dashboard.Body.String(), "<title>订阅管理</title>") {
 		t.Fatalf("unexpected dashboard document: %s", dashboard.Body.String())
 	}
+	if !strings.Contains(dashboard.Body.String(), `id="file-browser-backdrop"`) {
+		t.Fatal("dashboard is missing the server file browser")
+	}
 	settings := client.request(t, http.MethodGet, "/settings", nil)
 	assertStatus(t, settings, http.StatusOK)
 	if !strings.Contains(settings.Body.String(), "<title>安全设置</title>") {
@@ -492,6 +582,11 @@ func TestWebConsoleAndAssetsAreServedFromDisk(t *testing.T) {
 	assertStatus(t, javascript, http.StatusOK)
 	if !strings.Contains(javascript.Body.String(), "initializeAuthPage") {
 		t.Fatal("authentication JavaScript was not served")
+	}
+	dashboardScript := client.request(t, http.MethodGet, "/assets/dashboard.js", nil)
+	assertStatus(t, dashboardScript, http.StatusOK)
+	if !strings.Contains(dashboardScript.Body.String(), "loadFileDirectory") {
+		t.Fatal("server file browser JavaScript was not served")
 	}
 	sharedStyles := client.request(t, http.MethodGet, "/assets/shared.css", nil)
 	assertStatus(t, sharedStyles, http.StatusOK)

@@ -8,6 +8,7 @@ APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_BIN="$APP_DIR/$APP_NAME"
 DB_FILE="$APP_DIR/data/proxy-subs.db"
 WEB_DIR="$APP_DIR/web"
+FILE_ROOT="${FILE_ROOT:-$APP_DIR}"
 LOG_FILE="$APP_DIR/nohup.out"
 
 # Check if binary exists
@@ -31,7 +32,7 @@ fi
 # Start the application with nohup
 echo "Starting $APP_NAME..."
 mkdir -p "$APP_DIR/data"
-nohup "$APP_BIN" -db "$DB_FILE" -web-dir "$WEB_DIR" > "$LOG_FILE" 2>&1 &
+nohup "$APP_BIN" -db "$DB_FILE" -web-dir "$WEB_DIR" -file-root "$FILE_ROOT" > "$LOG_FILE" 2>&1 &
 
 # Get the PID
 PID=$!
