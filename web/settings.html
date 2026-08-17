@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#f4f2ec">
+  <title>安全设置</title>
+  <link rel="icon" href="/favicon.ico">
+  <link rel="stylesheet" href="/assets/shared.css">
+  <link rel="stylesheet" href="/assets/settings.css">
+  <script src="/assets/shared.js" defer></script>
+  <script src="/assets/settings.js" defer></script>
+</head>
+<body>
+  <header class="settings-topbar">
+    <a class="back-link" href="/dashboard">← 返回控制台</a>
+    <div class="settings-account">
+      <span id="account-name"></span>
+      <button id="logout-button" class="button button-quiet" type="button">退出</button>
+    </div>
+  </header>
+
+  <main class="settings-page">
+    <div class="settings-heading">
+      <p class="eyebrow">SETTINGS</p>
+      <h1>安全设置</h1>
+      <p class="muted">管理登录和订阅接口的错误访问保护。</p>
+    </div>
+
+    <section class="settings-card" aria-labelledby="protection-title">
+      <div class="setting-row">
+        <div>
+          <h2 id="protection-title">错误访问保护</h2>
+          <p>按客户端 IP 分别统计登录错误和订阅接口错误。</p>
+        </div>
+        <label class="switch">
+          <input id="protection-switch" type="checkbox" role="switch" aria-label="错误访问保护开关">
+          <span class="switch-track"><span class="switch-thumb"></span></span>
+        </label>
+      </div>
+
+      <div class="rule-grid">
+        <article>
+          <span>登录保护</span>
+          <strong>5 次 / 30 分钟</strong>
+          <p>验证码或账号密码连续错误达到上限后，该 IP 暂停登录 30 分钟。</p>
+        </article>
+        <article>
+          <span>订阅 API 保护</span>
+          <strong>5 次 / 30 分钟</strong>
+          <p>访问无效路径或使用错误 token 达到上限后，该 IP 暂停访问 30 分钟。</p>
+        </article>
+        <article>
+          <span>登录验证码</span>
+          <strong>7 位数字与字母</strong>
+          <p>验证码一次性使用，5 分钟过期，不受此开关影响。</p>
+        </article>
+      </div>
+
+      <div class="settings-actions">
+        <p id="setting-state" class="muted"></p>
+        <button id="save-settings" class="button button-primary" type="button">保存设置</button>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+</body>
+</html>

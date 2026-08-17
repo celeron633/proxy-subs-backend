@@ -28,6 +28,16 @@
           <span>密码</span>
           <input id="password" name="password" type="password" autocomplete="current-password" minlength="8" maxlength="72" required>
         </label>
+        <label id="captcha-field" hidden>
+          <span>验证码</span>
+          <div class="captcha-row">
+            <input id="captcha-answer" name="captcha" autocomplete="off" autocapitalize="off" spellcheck="false" minlength="7" maxlength="7" placeholder="输入图中字符" required>
+            <button id="refresh-captcha" class="captcha-image-button" type="button" aria-label="刷新验证码">
+              <img id="captcha-image" alt="验证码，点击刷新">
+            </button>
+          </div>
+          <small>数字与字母，注意区分大小写；点击图片可更换</small>
+        </label>
         <p id="auth-error" class="form-error" role="alert"></p>
         <button id="auth-submit" class="button button-primary button-wide" type="submit">登录</button>
       </form>

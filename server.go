@@ -20,14 +20,17 @@ import (
 const sessionCookieName = "proxy_subs_session"
 
 type SubsServer struct {
-	Router *gin.Engine
-	Store  *Store
-	webDir string
+	Router  *gin.Engine
+	Store   *Store
+	Captcha *CaptchaManager
+	webDir  string
 }
 
 type credentialsRequest struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
+	Username      string `json:"username"`
+	Password      string `json:"password"`
+	CaptchaID     string `json:"captcha_id"`
+	CaptchaAnswer string `json:"captcha_answer"`
 }
 
 type switchRequest struct {
@@ -51,7 +54,7 @@ func NewSubsServer(store *Store, webDir string, requestLogging bool) (*SubsServe
 	if store == nil {
 		return nil, errors.New("store is required")
 	}
-	for _, page := range []string{"index.html", "dashboard.html"} {
+	for _, page := range []string{"index.html", "dashboard.html", "settings.html"} {
 		pagePath := filepath.Join(webDir, page)
 		if info, err := os.Stat(pagePath); err != nil || info.IsDir() {
 			return nil, fmt.Errorf("web page not found at %s", pagePath)
@@ -59,11 +62,14 @@ func NewSubsServer(store *Store, webDir string, requestLogging bool) (*SubsServe
 	}
 
 	router := gin.New()
+	if err := router.SetTrustedProxies([]string{"127.0.0.1", "::1"}); err != nil {
+		return nil, fmt.Errorf("configure trusted proxies: %w", err)
+	}
 	if requestLogging {
 		router.Use(gin.Logger())
 	}
 	router.Use(gin.Recovery(), securityHeaders())
-	server := &SubsServer{Router: router, Store: store, webDir: webDir}
+	server := &SubsServer{Router: router, Store: store, Captcha: NewCaptchaManager(), webDir: webDir}
 	server.initRoutes()
 	return server, nil
 }
@@ -93,13 +99,23 @@ func (s *SubsServer) initRoutes() {
 		c.Header("Cache-Control", "no-store")
 		c.File(filepath.Join(s.webDir, "dashboard.html"))
 	})
+	s.Router.GET("/settings", func(c *gin.Context) {
+		if _, authenticated := s.currentUsername(c); !authenticated {
+			c.Redirect(http.StatusFound, "/")
+			return
+		}
+		c.Header("Cache-Control", "no-store")
+		c.File(filepath.Join(s.webDir, "settings.html"))
+	})
 
 	// Keep the existing public subscription URL shape, but match URL paths exactly.
 	s.Router.GET("/api/:apiPath", s.subscriptionHandler)
+	s.Router.NoRoute(s.notFoundHandler)
 
 	adminAPI := s.Router.Group("/admin/api")
 	adminAPI.Use(noStore(), sameOrigin())
 	adminAPI.GET("/status", s.statusHandler)
+	adminAPI.GET("/captcha", s.captchaHandler)
 	adminAPI.POST("/setup", s.setupHandler)
 	adminAPI.POST("/login", s.loginHandler)
 
@@ -108,6 +124,8 @@ func (s *SubsServer) initRoutes() {
 	authenticated.POST("/logout", s.logoutHandler)
 	authenticated.GET("/dashboard", s.dashboardHandler)
 	authenticated.PUT("/switch", s.switchHandler)
+	authenticated.GET("/settings/security", s.securitySettingsHandler)
+	authenticated.PUT("/settings/security", s.updateSecuritySettingsHandler)
 	authenticated.POST("/subscriptions", s.createSubscriptionHandler)
 	authenticated.PUT("/subscriptions/:id", s.updateSubscriptionHandler)
 	authenticated.DELETE("/subscriptions/:id", s.deleteSubscriptionHandler)
@@ -125,6 +143,15 @@ func (s *SubsServer) statusHandler(c *gin.Context) {
 		"authenticated": authenticated,
 		"username":      username,
 	})
+}
+
+func (s *SubsServer) captchaHandler(c *gin.Context) {
+	id, image, _, err := s.Captcha.Generate()
+	if err != nil {
+		internalError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"id": id, "image": image})
 }
 
 func (s *SubsServer) setupHandler(c *gin.Context) {
@@ -149,17 +176,30 @@ func (s *SubsServer) setupHandler(c *gin.Context) {
 }
 
 func (s *SubsServer) loginHandler(c *gin.Context) {
+	clientIP := c.ClientIP()
+	if s.rejectBlockedClient(c, securityScopeLogin, clientIP) {
+		return
+	}
+
 	var request credentialsRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
-		badRequest(c, "请输入用户名和密码")
+		s.recordProtectedFailureWithStatus(c, securityScopeLogin, clientIP, http.StatusBadRequest, "请输入用户名、密码和验证码")
+		return
+	}
+	if !s.Captcha.Verify(request.CaptchaID, request.CaptchaAnswer) {
+		s.recordProtectedFailure(c, securityScopeLogin, clientIP, "验证码错误，请重新输入")
 		return
 	}
 	username, err := s.Store.Authenticate(c.Request.Context(), strings.TrimSpace(request.Username), request.Password)
 	if err != nil {
 		if errors.Is(err, ErrInvalidCredentials) {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "用户名或密码不正确"})
+			s.recordProtectedFailure(c, securityScopeLogin, clientIP, "用户名或密码不正确")
 			return
 		}
+		internalError(c, err)
+		return
+	}
+	if err := s.clearProtectedFailures(c, securityScopeLogin, clientIP); err != nil {
 		internalError(c, err)
 		return
 	}
@@ -178,7 +218,7 @@ func (s *SubsServer) startSession(c *gin.Context, username string) {
 		return
 	}
 	c.SetSameSite(http.SameSiteStrictMode)
-	c.SetCookie(sessionCookieName, rawToken, int((7 * 24 * time.Hour).Seconds()), "/", "", c.Request.TLS != nil, true)
+	c.SetCookie(sessionCookieName, rawToken, int((7 * 24 * time.Hour).Seconds()), "/", "", requestIsHTTPS(c), true)
 	c.JSON(http.StatusOK, gin.H{"username": username})
 }
 
@@ -187,7 +227,7 @@ func (s *SubsServer) logoutHandler(c *gin.Context) {
 		_ = s.Store.DeleteSession(c.Request.Context(), hashToken(rawToken))
 	}
 	c.SetSameSite(http.SameSiteStrictMode)
-	c.SetCookie(sessionCookieName, "", -1, "/", "", c.Request.TLS != nil, true)
+	c.SetCookie(sessionCookieName, "", -1, "/", "", requestIsHTTPS(c), true)
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
@@ -220,6 +260,35 @@ func (s *SubsServer) switchHandler(c *gin.Context) {
 		return
 	}
 	if err := s.Store.SetAPIEnabled(c.Request.Context(), *request.Enabled); err != nil {
+		internalError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"enabled": *request.Enabled})
+}
+
+func (s *SubsServer) securitySettingsHandler(c *gin.Context) {
+	enabled, err := s.Store.ProtectionEnabled(c.Request.Context())
+	if err != nil {
+		internalError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"enabled":             enabled,
+		"max_errors":          securityMaxErrors,
+		"window_minutes":      int(securityWindow.Minutes()),
+		"block_minutes":       int(securityBlockTime.Minutes()),
+		"captcha_length":      7,
+		"captcha_expiry_mins": 5,
+	})
+}
+
+func (s *SubsServer) updateSecuritySettingsHandler(c *gin.Context) {
+	var request switchRequest
+	if err := c.ShouldBindJSON(&request); err != nil || request.Enabled == nil {
+		badRequest(c, "保护开关状态无效")
+		return
+	}
+	if err := s.Store.SetProtectionEnabled(c.Request.Context(), *request.Enabled); err != nil {
 		internalError(c, err)
 		return
 	}
@@ -298,11 +367,15 @@ func (s *SubsServer) subscriptionHandler(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "订阅服务当前已暂停"})
 		return
 	}
+	clientIP := c.ClientIP()
+	if s.rejectBlockedClient(c, securityScopeAPI, clientIP) {
+		return
+	}
 
 	subscription, err := s.Store.SubscriptionByURLPath(c.Request.Context(), c.Param("apiPath"))
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "订阅不存在"})
+			s.recordProtectedFailureWithStatus(c, securityScopeAPI, clientIP, http.StatusNotFound, "订阅不存在")
 			return
 		}
 		internalError(c, err)
@@ -321,7 +394,11 @@ func (s *SubsServer) subscriptionHandler(c *gin.Context) {
 	}
 	candidate := sha256.Sum256([]byte(token))
 	if token == "" || subtle.ConstantTimeCompare(candidate[:], subscription.TokenHash) != 1 {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "token 无效"})
+		s.recordProtectedFailure(c, securityScopeAPI, clientIP, "token 无效")
+		return
+	}
+	if err := s.clearProtectedFailures(c, securityScopeAPI, clientIP); err != nil {
+		internalError(c, err)
 		return
 	}
 
@@ -338,6 +415,101 @@ func (s *SubsServer) subscriptionHandler(c *gin.Context) {
 		return
 	}
 	c.FileAttachment(expandedPath, filepath.Base(expandedPath))
+}
+
+func (s *SubsServer) notFoundHandler(c *gin.Context) {
+	if c.Request.URL.Path != "/api" && !strings.HasPrefix(c.Request.URL.Path, "/api/") {
+		c.Status(http.StatusNotFound)
+		return
+	}
+
+	enabled, err := s.Store.APIEnabled(c.Request.Context())
+	if err != nil {
+		internalError(c, err)
+		return
+	}
+	if !enabled {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "订阅服务当前已暂停"})
+		return
+	}
+
+	clientIP := c.ClientIP()
+	if s.rejectBlockedClient(c, securityScopeAPI, clientIP) {
+		return
+	}
+	s.recordProtectedFailureWithStatus(c, securityScopeAPI, clientIP, http.StatusNotFound, "订阅不存在")
+}
+
+func (s *SubsServer) rejectBlockedClient(c *gin.Context, scope, clientIP string) bool {
+	enabled, err := s.Store.ProtectionEnabled(c.Request.Context())
+	if err != nil {
+		internalError(c, err)
+		return true
+	}
+	if !enabled {
+		return false
+	}
+	limit, err := s.Store.SecurityLimit(c.Request.Context(), scope, clientIP, time.Now())
+	if err != nil {
+		internalError(c, err)
+		return true
+	}
+	if limit.Blocked {
+		writeRateLimitResponse(c, limit.BlockedUntil)
+		return true
+	}
+	return false
+}
+
+func (s *SubsServer) recordProtectedFailure(c *gin.Context, scope, clientIP, message string) {
+	s.recordProtectedFailureWithStatus(c, scope, clientIP, http.StatusUnauthorized, message)
+}
+
+func (s *SubsServer) recordProtectedFailureWithStatus(c *gin.Context, scope, clientIP string, status int, message string) {
+	enabled, err := s.Store.ProtectionEnabled(c.Request.Context())
+	if err != nil {
+		internalError(c, err)
+		return
+	}
+	if !enabled {
+		c.JSON(status, gin.H{"error": message})
+		return
+	}
+	limit, err := s.Store.RecordSecurityFailure(c.Request.Context(), scope, clientIP, time.Now())
+	if err != nil {
+		internalError(c, err)
+		return
+	}
+	if limit.Blocked {
+		writeRateLimitResponse(c, limit.BlockedUntil)
+		return
+	}
+	c.JSON(status, gin.H{"error": message})
+}
+
+func (s *SubsServer) clearProtectedFailures(c *gin.Context, scope, clientIP string) error {
+	return s.Store.ClearSecurityFailures(c.Request.Context(), scope, clientIP)
+}
+
+func writeRateLimitResponse(c *gin.Context, blockedUntil time.Time) {
+	retryAfter := int(time.Until(blockedUntil).Seconds())
+	if retryAfter < 1 {
+		retryAfter = 1
+	}
+	c.Header("Retry-After", strconv.Itoa(retryAfter))
+	c.JSON(http.StatusTooManyRequests, gin.H{
+		"error":         "错误次数过多，请稍后重试",
+		"retry_after":   retryAfter,
+		"blocked_until": blockedUntil.Unix(),
+	})
+}
+
+func requestIsHTTPS(c *gin.Context) bool {
+	if c.Request.TLS != nil {
+		return true
+	}
+	forwardedProto := strings.TrimSpace(strings.Split(c.GetHeader("X-Forwarded-Proto"), ",")[0])
+	return strings.EqualFold(forwardedProto, "https")
 }
 
 func (s *SubsServer) requireSession() gin.HandlerFunc {
@@ -363,7 +535,7 @@ func (s *SubsServer) currentUsername(c *gin.Context) (string, bool) {
 
 func securityHeaders() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if c.Request.URL.Path == "/" || c.Request.URL.Path == "/dashboard" || c.Request.URL.Path == "/favicon.ico" || strings.HasPrefix(c.Request.URL.Path, "/assets/") {
+		if c.Request.URL.Path == "/" || c.Request.URL.Path == "/dashboard" || c.Request.URL.Path == "/settings" || c.Request.URL.Path == "/favicon.ico" || strings.HasPrefix(c.Request.URL.Path, "/assets/") {
 			c.Header("Cache-Control", "no-cache")
 		}
 		c.Header("X-Content-Type-Options", "nosniff")

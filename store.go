@@ -111,6 +111,7 @@ func (s *Store) initialize(ctx context.Context) error {
 			updated_at INTEGER NOT NULL
 		)`,
 		`INSERT OR IGNORE INTO settings(key, value, updated_at) VALUES ('api_enabled', 'true', CAST(strftime('%s','now') AS INTEGER))`,
+		`INSERT OR IGNORE INTO settings(key, value, updated_at) VALUES ('protection_enabled', 'true', CAST(strftime('%s','now') AS INTEGER))`,
 		`CREATE TABLE IF NOT EXISTS subscriptions (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			name TEXT NOT NULL,
@@ -123,6 +124,16 @@ func (s *Store) initialize(ctx context.Context) error {
 			created_at INTEGER NOT NULL,
 			updated_at INTEGER NOT NULL
 		)`,
+		`CREATE TABLE IF NOT EXISTS security_failures (
+			scope TEXT NOT NULL,
+			client_ip TEXT NOT NULL,
+			failure_count INTEGER NOT NULL,
+			first_failure_at INTEGER NOT NULL,
+			blocked_until INTEGER NOT NULL DEFAULT 0,
+			updated_at INTEGER NOT NULL,
+			PRIMARY KEY (scope, client_ip)
+		)`,
+		`CREATE INDEX IF NOT EXISTS security_failures_updated_at_idx ON security_failures(updated_at)`,
 	}
 
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -136,6 +147,9 @@ func (s *Store) initialize(ctx context.Context) error {
 		}
 	}
 	if _, err := tx.ExecContext(ctx, "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (1, ?)", time.Now().Unix()); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (2, ?)", time.Now().Unix()); err != nil {
 		return err
 	}
 	return tx.Commit()
