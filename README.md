@@ -34,6 +34,7 @@ go build -o proxy-subs-backend .
 | `-web-dir` | `web` | 网页文件目录 |
 | `-file-root` | `.` | 服务器文件选择器允许浏览的根目录 |
 | `-debug` | `false` | 是否启用 Gin 调试模式和 HTTP 请求日志 |
+| `-reset-password` | `false` | 列出管理员账户并重置密码，完成后退出，不启动服务 |
 
 例如：
 
@@ -42,6 +43,16 @@ go build -o proxy-subs-backend .
 ```
 
 `-file-root` 只限定网页文件选择器的浏览范围。已有订阅和手动输入的文件路径仍可位于其他目录，升级后不会失效。文件选择接口需要管理员登录，并会忽略指向根目录以外的符号链接。
+
+### 重置管理员密码
+
+忘记密码时，可在服务器上运行（`-db` 需与服务使用的数据库一致）：
+
+```bash
+./proxy-subs-backend -reset-password -db data/proxy-subs.db
+```
+
+程序会列出所有管理员账户，选择账户后输入两次新密码（终端下输入不回显）。重置成功后该账户原有的登录会话全部失效，可直接用新密码登录，无需重启服务。
 
 Linux 下也可以使用仓库中的脚本：
 

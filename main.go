@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
@@ -13,6 +14,7 @@ func main() {
 	webDir := flag.String("web-dir", "web", "directory containing the web console")
 	fileRoot := flag.String("file-root", ".", "root directory available to the server file browser")
 	debugMode := flag.Bool("debug", false, "enable Gin debug mode and HTTP request logging")
+	resetPassword := flag.Bool("reset-password", false, "list administrator accounts, reset a password and exit")
 	flag.Parse()
 
 	if !*debugMode {
@@ -25,6 +27,15 @@ func main() {
 		os.Exit(1)
 	}
 	defer store.Close()
+
+	if *resetPassword {
+		if err := runResetPassword(context.Background(), store, os.Stdin, os.Stdout); err != nil {
+			store.Close()
+			fmt.Fprintf(os.Stderr, "reset password: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
 
 	server, err := NewSubsServer(store, *webDir, *fileRoot, *debugMode)
 	if err != nil {

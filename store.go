@@ -203,6 +203,61 @@ func (s *Store) Authenticate(ctx context.Context, username, password string) (st
 	return storedUsername, nil
 }
 
+type Admin struct {
+	ID        int64
+	Username  string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+func (s *Store) ListAdmins(ctx context.Context) ([]Admin, error) {
+	rows, err := s.db.QueryContext(ctx, "SELECT id, username, created_at, updated_at FROM admins ORDER BY id")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var admins []Admin
+	for rows.Next() {
+		var admin Admin
+		var createdAt, updatedAt int64
+		if err := rows.Scan(&admin.ID, &admin.Username, &createdAt, &updatedAt); err != nil {
+			return nil, err
+		}
+		admin.CreatedAt = time.Unix(createdAt, 0)
+		admin.UpdatedAt = time.Unix(updatedAt, 0)
+		admins = append(admins, admin)
+	}
+	return admins, rows.Err()
+}
+
+// ResetAdminPassword replaces the password and revokes all existing sessions of the administrator.
+func (s *Store) ResetAdminPassword(ctx context.Context, id int64, password string) error {
+	passwordHash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	result, err := tx.ExecContext(ctx, "UPDATE admins SET password_hash = ?, updated_at = ? WHERE id = ?", passwordHash, time.Now().Unix(), id)
+	if err != nil {
+		return err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return ErrNotFound
+	}
+	if _, err := tx.ExecContext(ctx, "DELETE FROM sessions WHERE admin_id = ?", id); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 func (s *Store) CreateSession(ctx context.Context, tokenHash []byte, expiresAt time.Time) error {
 	now := time.Now().Unix()
 	if _, err := s.db.ExecContext(ctx, "DELETE FROM sessions WHERE expires_at <= ?", now); err != nil {

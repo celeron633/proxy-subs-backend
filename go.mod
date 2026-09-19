@@ -6,6 +6,7 @@ require (
 	github.com/gin-gonic/gin v1.11.0
 	github.com/mojocn/base64Captcha v1.3.8
 	golang.org/x/crypto v0.48.0
+	golang.org/x/term v0.40.0
 	modernc.org/sqlite v1.52.0
 )
 
