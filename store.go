@@ -92,7 +92,7 @@ func (s *Store) initialize(ctx context.Context) error {
 			applied_at INTEGER NOT NULL
 		)`,
 		`CREATE TABLE IF NOT EXISTS admins (
-			id INTEGER PRIMARY KEY CHECK (id = 1),
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			username TEXT NOT NULL UNIQUE COLLATE NOCASE,
 			password_hash BLOB NOT NULL,
 			created_at INTEGER NOT NULL,
@@ -173,7 +173,8 @@ func (s *Store) CreateAdmin(ctx context.Context, username, password string) erro
 		return err
 	}
 	now := time.Now().Unix()
-	result, err := s.db.ExecContext(ctx, "INSERT OR IGNORE INTO admins(id, username, password_hash, created_at, updated_at) VALUES (1, ?, ?, ?, ?)", username, passwordHash, now, now)
+	result, err := s.db.ExecContext(ctx, `INSERT INTO admins(username, password_hash, created_at, updated_at)
+		SELECT ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM admins)`, username, passwordHash, now, now)
 	if err != nil {
 		return err
 	}
@@ -187,27 +188,32 @@ func (s *Store) CreateAdmin(ctx context.Context, username, password string) erro
 	return nil
 }
 
-func (s *Store) Authenticate(ctx context.Context, username, password string) (string, error) {
-	var storedUsername string
-	var passwordHash []byte
-	err := s.db.QueryRowContext(ctx, "SELECT username, password_hash FROM admins WHERE username = ?", username).Scan(&storedUsername, &passwordHash)
+type authenticatedAdmin struct {
+	id           int64
+	username     string
+	passwordHash []byte
+}
+
+func (s *Store) Authenticate(ctx context.Context, username, password string) (authenticatedAdmin, error) {
+	var admin authenticatedAdmin
+	err := s.db.QueryRowContext(ctx, "SELECT id, username, password_hash FROM admins WHERE username = ?", username).Scan(&admin.id, &admin.username, &admin.passwordHash)
 	if errors.Is(err, sql.ErrNoRows) {
-		return "", ErrInvalidCredentials
+		return authenticatedAdmin{}, ErrInvalidCredentials
 	}
 	if err != nil {
-		return "", err
+		return authenticatedAdmin{}, err
 	}
-	if err := bcrypt.CompareHashAndPassword(passwordHash, []byte(password)); err != nil {
-		return "", ErrInvalidCredentials
+	if err := bcrypt.CompareHashAndPassword(admin.passwordHash, []byte(password)); err != nil {
+		return authenticatedAdmin{}, ErrInvalidCredentials
 	}
-	return storedUsername, nil
+	return admin, nil
 }
 
 type Admin struct {
-	ID        int64
-	Username  string
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID        int64     `json:"id"`
+	Username  string    `json:"username"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 func (s *Store) ListAdmins(ctx context.Context) ([]Admin, error) {
@@ -216,7 +222,7 @@ func (s *Store) ListAdmins(ctx context.Context) ([]Admin, error) {
 		return nil, err
 	}
 	defer rows.Close()
-	var admins []Admin
+	admins := make([]Admin, 0)
 	for rows.Next() {
 		var admin Admin
 		var createdAt, updatedAt int64
@@ -232,6 +238,13 @@ func (s *Store) ListAdmins(ctx context.Context) ([]Admin, error) {
 
 // ResetAdminPassword replaces the password and revokes all existing sessions of the administrator.
 func (s *Store) ResetAdminPassword(ctx context.Context, id int64, password string) error {
+	return s.resetAdminPassword(ctx, id, password, nil)
+}
+
+func (s *Store) resetAdminPassword(ctx context.Context, id int64, password string, expectedHash []byte) error {
+	if err := validatePassword(password); err != nil {
+		return err
+	}
 	passwordHash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		return err
@@ -241,7 +254,13 @@ func (s *Store) ResetAdminPassword(ctx context.Context, id int64, password strin
 		return err
 	}
 	defer tx.Rollback()
-	result, err := tx.ExecContext(ctx, "UPDATE admins SET password_hash = ?, updated_at = ? WHERE id = ?", passwordHash, time.Now().Unix(), id)
+	query := "UPDATE admins SET password_hash = ?, updated_at = ? WHERE id = ?"
+	args := []any{passwordHash, time.Now().Unix(), id}
+	if expectedHash != nil {
+		query += " AND password_hash = ?"
+		args = append(args, expectedHash)
+	}
+	result, err := tx.ExecContext(ctx, query, args...)
 	if err != nil {
 		return err
 	}
@@ -258,12 +277,20 @@ func (s *Store) ResetAdminPassword(ctx context.Context, id int64, password strin
 	return tx.Commit()
 }
 
-func (s *Store) CreateSession(ctx context.Context, tokenHash []byte, expiresAt time.Time) error {
+func (s *Store) CreateSession(ctx context.Context, admin authenticatedAdmin, tokenHash []byte, expiresAt time.Time) error {
 	now := time.Now().Unix()
 	if _, err := s.db.ExecContext(ctx, "DELETE FROM sessions WHERE expires_at <= ?", now); err != nil {
 		return err
 	}
-	_, err := s.db.ExecContext(ctx, "INSERT INTO sessions(token_hash, admin_id, expires_at, created_at) VALUES (?, 1, ?, ?)", tokenHash, expiresAt.Unix(), now)
+	result, err := s.db.ExecContext(ctx, `INSERT INTO sessions(token_hash, admin_id, expires_at, created_at)
+		SELECT ?, id, ?, ? FROM admins WHERE id = ? AND password_hash = ?`, tokenHash, expiresAt.Unix(), now, admin.id, admin.passwordHash)
+	if err != nil {
+		return err
+	}
+	rows, err := result.RowsAffected()
+	if err == nil && rows == 0 {
+		return ErrInvalidCredentials
+	}
 	return err
 }
 

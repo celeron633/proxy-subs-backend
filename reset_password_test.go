@@ -21,7 +21,11 @@ func TestResetPasswordCommand(t *testing.T) {
 		t.Fatal(err)
 	}
 	tokenHash := []byte("session-token-hash")
-	if err := store.CreateSession(ctx, tokenHash, time.Now().Add(time.Hour)); err != nil {
+	admin, err := store.Authenticate(ctx, "admin", "old-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CreateSession(ctx, admin, tokenHash, time.Now().Add(time.Hour)); err != nil {
 		t.Fatal(err)
 	}
 

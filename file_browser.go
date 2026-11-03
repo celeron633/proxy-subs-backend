@@ -123,6 +123,9 @@ func (s *SubsServer) fileBrowserHandler(c *gin.Context) {
 		if err != nil || !pathWithinRoot(s.fileRoot, resolvedEntryPath) {
 			continue
 		}
+		if s.isRecoveryFile(entryPath) || s.isRecoveryFile(resolvedEntryPath) {
+			continue
+		}
 		info, err := os.Stat(resolvedEntryPath)
 		if err != nil || (!info.IsDir() && !info.Mode().IsRegular()) {
 			continue

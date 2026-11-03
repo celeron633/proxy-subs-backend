@@ -19,6 +19,8 @@ func TestWebPageElementReferences(t *testing.T) {
 		{"index.html", "auth.js"},
 		{"dashboard.html", "dashboard.js"},
 		{"settings.html", "settings.js"},
+		{"users.html", "users.js"},
+		{"recover.html", "recover.js"},
 	} {
 		t.Run(page.html, func(t *testing.T) {
 			document, err := os.ReadFile(filepath.Join("web", page.html))
@@ -49,7 +51,7 @@ func TestWebReferencedAssetsAreServedFromDisk(t *testing.T) {
 	_, client := newTestServer(t)
 	assetPattern := regexp.MustCompile(`(?:src|href)="(/assets/[^"#]+)(?:#[^"]*)?"`)
 	assets := make(map[string]bool)
-	for _, page := range []string{"index.html", "dashboard.html", "settings.html"} {
+	for _, page := range []string{"index.html", "dashboard.html", "settings.html", "users.html", "recover.html"} {
 		document, err := os.ReadFile(filepath.Join("web", page))
 		if err != nil {
 			t.Fatal(err)

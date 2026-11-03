@@ -1,0 +1,16 @@
+.users-page { max-width: 1200px; padding: 16px 32px 40px; }
+.users-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 24px; }
+.users-heading p { margin: 0; font-size: 13px; color: var(--muted); }
+.users-list { overflow: hidden; border: 1px solid var(--line); border-radius: 16px; background: var(--panel); }
+.user-row { display: flex; padding: 20px 24px; justify-content: space-between; align-items: center; gap: 20px; border-bottom: 1px solid var(--line); }
+.user-row:last-child { border-bottom: 0; }
+.user-name { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; overflow-wrap: anywhere; }
+.user-name h2 { margin: 0; font-size: 16px; }
+.user-meta { margin: 6px 0 0; font-size: 12px; color: var(--muted); }
+.user-actions { display: flex; flex-shrink: 0; gap: 8px; }
+.user-actions .button { padding-inline: 12px; }
+.user-form { display: grid; gap: 20px; }
+.user-form .modal-actions { margin-top: 0; }
+.user-error { padding: 24px; border: 1px solid var(--line); border-radius: 16px; }
+@media (max-width: 1000px) { .users-page { padding: 16px 24px 32px; } }
+@media (max-width: 760px) { .users-page { padding: 8px 16px 24px; } .user-row { padding: 20px; flex-wrap: wrap; gap: 12px; } .user-actions { margin-left: auto; } .users-heading { align-items: flex-start; } }

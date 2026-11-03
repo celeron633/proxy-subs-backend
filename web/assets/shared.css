@@ -98,3 +98,7 @@ small { display: block; margin: 5px 0 0; color: var(--muted); font-size: 12px; l
 }
 @media (max-width: 360px) { #account-name { max-width: 64px; } .topbar { padding-inline: 16px; gap: 8px; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
+@media (max-width: 760px) {
+  .side-nav { gap: 4px; }
+  .nav-item { min-width: 0; min-height: 68px; padding: 8px; gap: 4px; flex-direction: column; border-radius: 20px; font-size: 13px; }
+}

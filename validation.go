@@ -17,11 +17,22 @@ var (
 )
 
 func validateCredentials(username, password string) error {
+	if err := validateUsername(username); err != nil {
+		return err
+	}
+	return validatePassword(password)
+}
+
+func validateUsername(username string) error {
 	username = strings.TrimSpace(username)
 	usernameLength := utf8.RuneCountInString(username)
 	if usernameLength < 3 || usernameLength > 32 || !usernamePattern.MatchString(username) {
 		return errors.New("用户名需为 3–32 个字符，只能包含文字、数字、点、横线和下划线")
 	}
+	return nil
+}
+
+func validatePassword(password string) error {
 	if utf8.RuneCountInString(password) < 8 {
 		return errors.New("密码至少需要 8 个字符")
 	}

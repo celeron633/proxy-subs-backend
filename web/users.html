@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#f8f9ff">
+  <title>用户管理</title>
+  <link rel="icon" href="/favicon.ico">
+  <link rel="stylesheet" href="/assets/shared.css">
+  <link rel="stylesheet" href="/assets/dashboard.css">
+  <script src="/assets/shared.js" defer></script>
+  <link rel="stylesheet" href="/assets/users.css">
+  <script src="/assets/users.js" defer></script>
+</head>
+<body>
+  <div class="app-shell">
+<aside class="sidebar" aria-label="主导航">
+      <a class="wordmark" href="/dashboard"><span class="brand-mark"><svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#layers"></use></svg></span>Proxy Subs</a>
+      <nav class="side-nav">
+        <a class="nav-item" href="/dashboard" ><svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#grid"></use></svg>订阅管理</a>
+        <a class="nav-item" href="/settings"><svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#shield"></use></svg>安全设置</a>
+        <a class="nav-item" href="/users" aria-current="page"><svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#users"></use></svg>用户管理</a>
+      </nav>
+    </aside>
+    <header class="topbar">
+      <h1>用户管理</h1>
+      <div class="account"><span id="account-name">管理员</span><button id="logout-button" class="button button-quiet" type="button"><svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#logout"></use></svg>退出</button></div>
+    </header>
+    <main class="users-page">
+      <div class="users-heading"><p>所有账号均为管理员。</p><button id="add-button" class="button button-primary" type="button" disabled>新增用户</button></div>
+      <p id="users-loading" class="muted" role="status">正在加载…</p>
+      <div id="users-error" class="user-error" hidden><p id="users-error-message" role="alert"></p><button id="retry-users" class="button button-secondary" type="button">重试</button></div>
+      <section id="users-list" class="users-list" aria-label="用户列表"></section>
+    </main>
+  </div>
+  <div id="user-backdrop" class="modal-backdrop" hidden>
+    <section class="modal" role="dialog" aria-modal="true" aria-labelledby="user-title">
+      <div class="modal-heading"><h2 id="user-title">新增用户</h2><button class="icon-button" type="button" data-close-user aria-label="关闭">×</button></div>
+      <form id="user-form" class="user-form" novalidate>
+        <input id="user-id" type="hidden">
+        <label><span>用户名</span><input id="user-name" autocomplete="off" minlength="3" maxlength="32" required></label>
+        <label><span>密码</span><input id="user-password" type="password" autocomplete="new-password" minlength="8" maxlength="72" required><small>至少 8 个字符，不超过 72 字节。</small></label>
+        <label><span>确认密码</span><input id="user-confirm-password" type="password" autocomplete="new-password" minlength="8" maxlength="72" required></label>
+        <p id="user-password-note" class="muted" hidden>重置后，该用户的所有登录会话将失效。</p>
+        <p id="user-error" class="form-error" role="alert"></p>
+        <div class="modal-actions"><button class="button button-secondary" type="button" data-close-user>取消</button><button id="save-user" class="button button-primary" type="submit">保存</button></div>
+      </form>
+    </section>
+  </div>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+</body>
+</html>

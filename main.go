@@ -42,6 +42,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "initialize server: %v\n", err)
 		os.Exit(1)
 	}
+	defer server.Recovery.Close()
 
 	log.Printf("proxy-subs-backend listening on %s (database: %s)", *listenAddr, *databasePath)
 	if err := server.StartServer(*listenAddr); err != nil {

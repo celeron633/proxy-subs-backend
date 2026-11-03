@@ -23,6 +23,7 @@ type SubsServer struct {
 	Router   *gin.Engine
 	Store    *Store
 	Captcha  *CaptchaManager
+	Recovery *RecoveryManager
 	webDir   string
 	fileRoot string
 }
@@ -55,7 +56,7 @@ func NewSubsServer(store *Store, webDir, fileRoot string, requestLogging bool) (
 	if store == nil {
 		return nil, errors.New("store is required")
 	}
-	for _, page := range []string{"index.html", "dashboard.html", "settings.html"} {
+	for _, page := range []string{"index.html", "dashboard.html", "settings.html", "users.html", "recover.html"} {
 		pagePath := filepath.Join(webDir, page)
 		if info, err := os.Stat(pagePath); err != nil || info.IsDir() {
 			return nil, fmt.Errorf("web page not found at %s", pagePath)
@@ -75,6 +76,11 @@ func NewSubsServer(store *Store, webDir, fileRoot string, requestLogging bool) (
 	}
 	router.Use(gin.Recovery(), securityHeaders())
 	server := &SubsServer{Router: router, Store: store, Captcha: NewCaptchaManager(), webDir: webDir, fileRoot: resolvedFileRoot}
+	executable, err := os.Executable()
+	if err != nil {
+		return nil, err
+	}
+	server.Recovery = NewRecoveryManager(filepath.Join(filepath.Dir(executable), "recovery.txt"))
 	server.initRoutes()
 	return server, nil
 }
@@ -84,6 +90,13 @@ func (s *SubsServer) StartServer(listenAddr string) error {
 }
 
 func (s *SubsServer) initRoutes() {
+	s.Router.Use(func(c *gin.Context) {
+		if strings.HasPrefix(c.Request.URL.Path, "/assets/") && s.isRecoveryFile(filepath.Join(s.webDir, filepath.FromSlash(c.Request.URL.Path[1:]))) {
+			c.AbortWithStatus(http.StatusNotFound)
+			return
+		}
+		c.Next()
+	})
 	s.Router.Static("/assets", filepath.Join(s.webDir, "assets"))
 	s.Router.GET("/favicon.ico", func(c *gin.Context) {
 		c.File(filepath.Join("static", "favicon.ico"))
@@ -112,6 +125,18 @@ func (s *SubsServer) initRoutes() {
 		c.Header("Cache-Control", "no-store")
 		c.File(filepath.Join(s.webDir, "settings.html"))
 	})
+	s.Router.GET("/users", func(c *gin.Context) {
+		if _, authenticated := s.currentUsername(c); !authenticated {
+			c.Redirect(http.StatusFound, "/")
+			return
+		}
+		c.Header("Cache-Control", "no-store")
+		c.File(filepath.Join(s.webDir, "users.html"))
+	})
+	s.Router.GET("/recover", func(c *gin.Context) {
+		c.Header("Cache-Control", "no-store")
+		c.File(filepath.Join(s.webDir, "recover.html"))
+	})
 
 	// Keep the existing public subscription URL shape, but match URL paths exactly.
 	s.Router.GET("/api/:apiPath", s.subscriptionHandler)
@@ -123,6 +148,8 @@ func (s *SubsServer) initRoutes() {
 	adminAPI.GET("/captcha", s.captchaHandler)
 	adminAPI.POST("/setup", s.setupHandler)
 	adminAPI.POST("/login", s.loginHandler)
+	adminAPI.POST("/recovery/request", s.requestRecoveryHandler)
+	adminAPI.POST("/recovery/reset", s.resetRecoveryHandler)
 
 	authenticated := adminAPI.Group("")
 	authenticated.Use(s.requireSession())
@@ -135,6 +162,10 @@ func (s *SubsServer) initRoutes() {
 	authenticated.POST("/subscriptions", s.createSubscriptionHandler)
 	authenticated.PUT("/subscriptions/:id", s.updateSubscriptionHandler)
 	authenticated.DELETE("/subscriptions/:id", s.deleteSubscriptionHandler)
+	authenticated.GET("/users", s.listUsersHandler)
+	authenticated.POST("/users", s.createUserHandler)
+	authenticated.PUT("/users/:id/password", s.resetUserPasswordHandler)
+	authenticated.DELETE("/users/:id", s.deleteUserHandler)
 }
 
 func (s *SubsServer) statusHandler(c *gin.Context) {
@@ -178,7 +209,12 @@ func (s *SubsServer) setupHandler(c *gin.Context) {
 		internalError(c, err)
 		return
 	}
-	s.startSession(c, strings.TrimSpace(request.Username))
+	admin, err := s.Store.Authenticate(c.Request.Context(), strings.TrimSpace(request.Username), request.Password)
+	if err != nil {
+		internalError(c, err)
+		return
+	}
+	s.startSession(c, admin)
 }
 
 func (s *SubsServer) loginHandler(c *gin.Context) {
@@ -196,7 +232,7 @@ func (s *SubsServer) loginHandler(c *gin.Context) {
 		s.recordProtectedFailure(c, securityScopeLogin, clientIP, "验证码错误，请重新输入")
 		return
 	}
-	username, err := s.Store.Authenticate(c.Request.Context(), strings.TrimSpace(request.Username), request.Password)
+	admin, err := s.Store.Authenticate(c.Request.Context(), strings.TrimSpace(request.Username), request.Password)
 	if err != nil {
 		if errors.Is(err, ErrInvalidCredentials) {
 			s.recordProtectedFailure(c, securityScopeLogin, clientIP, "用户名或密码不正确")
@@ -209,23 +245,27 @@ func (s *SubsServer) loginHandler(c *gin.Context) {
 		internalError(c, err)
 		return
 	}
-	s.startSession(c, username)
+	s.startSession(c, admin)
 }
 
-func (s *SubsServer) startSession(c *gin.Context, username string) {
+func (s *SubsServer) startSession(c *gin.Context, admin authenticatedAdmin) {
 	rawToken, err := randomToken(32)
 	if err != nil {
 		internalError(c, err)
 		return
 	}
 	expiresAt := time.Now().Add(7 * 24 * time.Hour)
-	if err := s.Store.CreateSession(c.Request.Context(), hashToken(rawToken), expiresAt); err != nil {
+	if err := s.Store.CreateSession(c.Request.Context(), admin, hashToken(rawToken), expiresAt); err != nil {
+		if errors.Is(err, ErrInvalidCredentials) {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "账号凭证已变更，请重新登录"})
+			return
+		}
 		internalError(c, err)
 		return
 	}
 	c.SetSameSite(http.SameSiteStrictMode)
 	c.SetCookie(sessionCookieName, rawToken, int((7 * 24 * time.Hour).Seconds()), "/", "", requestIsHTTPS(c), true)
-	c.JSON(http.StatusOK, gin.H{"username": username})
+	c.JSON(http.StatusOK, gin.H{"username": admin.username})
 }
 
 func (s *SubsServer) logoutHandler(c *gin.Context) {
@@ -412,6 +452,10 @@ func (s *SubsServer) subscriptionHandler(c *gin.Context) {
 	if err != nil {
 		log.Printf("expand subscription file path for id %d: %v", subscription.ID, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "订阅文件路径无效"})
+		return
+	}
+	if s.isRecoveryFile(expandedPath) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "该文件不能通过订阅下载"})
 		return
 	}
 	info, err := os.Stat(expandedPath)

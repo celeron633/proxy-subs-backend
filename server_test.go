@@ -15,6 +15,7 @@ import (
 )
 
 type testClient struct {
+	server   *SubsServer
 	router   http.Handler
 	cookie   *http.Cookie
 	captcha  *CaptchaManager
@@ -33,8 +34,8 @@ func newTestServer(t *testing.T) (*Store, *testClient) {
 		store.Close()
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { store.Close() })
-	return store, &testClient{router: server.Router, captcha: server.Captcha, fileRoot: fileRoot}
+	t.Cleanup(func() { server.Recovery.Close(); store.Close() })
+	return store, &testClient{server: server, router: server.Router, captcha: server.Captcha, fileRoot: fileRoot}
 }
 
 func (client *testClient) request(t *testing.T, method, path string, body any) *httptest.ResponseRecorder {

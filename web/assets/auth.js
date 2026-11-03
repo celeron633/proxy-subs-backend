@@ -32,6 +32,7 @@ function configureAuthForm(isFirstRun) {
   $("#captcha-field").hidden = isFirstRun;
   $("#captcha-answer").disabled = isFirstRun;
   $("#captcha-answer").required = !isFirstRun;
+  $("#forgot-password").hidden = isFirstRun;
 }
 
 async function loadCaptcha() {

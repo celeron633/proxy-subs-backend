@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#f8f9ff">
+  <title>找回密码</title>
+  <link rel="icon" href="/favicon.ico">
+  <link rel="stylesheet" href="/assets/shared.css">
+  <link rel="stylesheet" href="/assets/auth.css">
+  <script src="/assets/shared.js" defer></script>
+  <script src="/assets/recover.js" defer></script>
+</head>
+<body class="auth-page">
+  <main class="auth-shell recovery-shell">
+    <section class="auth-card" aria-labelledby="recovery-title">
+      <a class="auth-brand" href="/">管理后台</a>
+      <h1 id="recovery-title">找回密码</h1>
+      <p id="recovery-description" class="recovery-description">验证后，在服务可执行文件同目录生成 recovery.txt。</p>
+      <form id="recovery-form" novalidate>
+        <label><span>用户名</span><input id="recovery-username" autocomplete="username" minlength="3" maxlength="32" required autofocus></label>
+        <div id="request-fields">
+          <label class="captcha-field"><span>验证码</span><div class="captcha-row"><input id="recovery-captcha" autocomplete="off" autocapitalize="off" spellcheck="false" minlength="7" maxlength="7" placeholder="区分大小写" required><button id="refresh-recovery-captcha" type="button" class="captcha-image-button" aria-label="刷新验证码"><img id="recovery-captcha-image" alt="验证码，点击刷新"></button></div></label>
+        </div>
+        <div id="reset-fields" class="recovery-fields" hidden>
+          <label><span>recovery.txt 内容</span><textarea id="recovery-code" rows="2" maxlength="128" autocomplete="off" autocapitalize="off" spellcheck="false" disabled required></textarea></label>
+          <label><span>新密码</span><input id="recovery-password" type="password" autocomplete="new-password" minlength="8" maxlength="72" disabled required></label>
+          <label><span>确认新密码</span><input id="recovery-confirm-password" type="password" autocomplete="new-password" minlength="8" maxlength="72" disabled required></label>
+        </div>
+        <p id="recovery-error" class="form-error" role="alert"></p>
+        <button id="recovery-submit" type="submit" class="button button-primary button-wide">生成恢复文件</button>
+      </form>
+      <button id="recovery-mode" type="button" class="button button-quiet auth-link">已有恢复码</button>
+      <p id="recovery-success" role="status" hidden>密码已重置，请使用新密码登录。</p>
+      <a class="button button-quiet auth-link" href="/">返回登录</a>
+    </section>
+  </main>
+</body>
+</html>
