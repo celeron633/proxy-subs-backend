@@ -11,6 +11,7 @@ async function loadSecuritySettings() {
     $("#account-name").textContent = dashboard.username;
     originalProtectionState = settings.enabled;
     $("#protection-switch").checked = settings.enabled;
+    $("#protection-switch").disabled = false;
     updateSettingState();
   } catch (error) {
     if (error.status === 401) {
@@ -24,14 +25,15 @@ async function loadSecuritySettings() {
 function updateSettingState() {
   const enabled = $("#protection-switch").checked;
   $("#setting-state").textContent = enabled
-    ? "保护已开启，错误次数会按 IP 记录。"
-    : "保护将关闭，已有的错误和封禁记录会被清空。";
+    ? (enabled === originalProtectionState ? "已开启" : "未保存：开启保护")
+    : (enabled === originalProtectionState ? "已关闭" : "未保存：关闭后将清空错误及封禁记录");
   $("#save-settings").disabled = enabled === originalProtectionState;
 }
 
 async function saveSecuritySettings() {
   const button = $("#save-settings");
   const enabled = $("#protection-switch").checked;
+  $("#protection-switch").disabled = true;
   setBusy(button, true, "保存中…");
   try {
     await api("/admin/api/settings/security", {
@@ -48,6 +50,7 @@ async function saveSecuritySettings() {
     }
     toast(error.message, true);
   } finally {
+    $("#protection-switch").disabled = false;
     button.textContent = "保存设置";
     button.disabled = $("#protection-switch").checked === originalProtectionState;
   }

@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
-  <meta name="theme-color" content="#f5f6f7">
-  <title>管理后台</title>
+  <meta name="theme-color" content="#f8f9ff">
+  <title>登录 · Proxy Subs</title>
   <link rel="icon" href="/favicon.ico">
   <link rel="stylesheet" href="/assets/shared.css">
   <link rel="stylesheet" href="/assets/auth.css">
@@ -15,9 +15,8 @@
 <body class="auth-page">
   <main class="auth-shell">
     <section class="auth-card" aria-labelledby="auth-title">
-      <div class="system-mark" aria-hidden="true">M</div>
+      <a class="auth-brand" href="/">Proxy Subs</a>
       <h1 id="auth-title">登录</h1>
-      <p id="auth-description" class="muted">请输入管理员账号以继续。</p>
 
       <form id="auth-form" novalidate>
         <label>
@@ -36,13 +35,11 @@
               <img id="captcha-image" alt="验证码，点击刷新">
             </button>
           </div>
-          <small>数字与字母，注意区分大小写；点击图片可更换</small>
+          <small>区分大小写，点击图片刷新</small>
         </label>
         <p id="auth-error" class="form-error" role="alert"></p>
         <button id="auth-submit" class="button button-primary button-wide" type="submit">登录</button>
       </form>
-
-      <p class="auth-foot">管理后台</p>
     </section>
   </main>
 </body>

@@ -3,6 +3,7 @@
 const state = {
   dashboard: null,
   query: "",
+  filter: "all",
 };
 
 const editorBackdrop = $("#editor-backdrop");
@@ -14,6 +15,9 @@ let fileBrowserParentPath = null;
 let fileBrowserLoadSequence = 0;
 
 async function loadDashboard() {
+  $("#load-state").hidden = false;
+  $("#load-error").hidden = true;
+  $("#subscription-list").setAttribute("aria-busy", "true");
   try {
     state.dashboard = await api("/admin/api/dashboard");
     renderDashboard();
@@ -22,7 +26,12 @@ async function loadDashboard() {
       window.location.replace("/");
       return;
     }
-    toast(error.message, true);
+    $("#load-error-message").textContent = error.message;
+    $("#load-error").hidden = false;
+    $("#result-count").textContent = "加载失败";
+  } finally {
+    $("#load-state").hidden = true;
+    $("#subscription-list").removeAttribute("aria-busy");
   }
 }
 
@@ -30,8 +39,9 @@ function renderDashboard() {
   const { username, api_enabled: apiEnabled, subscriptions } = state.dashboard;
   $("#account-name").textContent = username;
   $("#api-switch").checked = apiEnabled;
+  $("#api-switch").disabled = false;
+  $("#service-label").textContent = apiEnabled ? "运行中" : "已暂停";
   $("#service-dot").classList.toggle("off", !apiEnabled);
-  $("#service-copy").textContent = apiEnabled ? "所有已启用的订阅入口均可访问" : "公开订阅入口已全部暂停";
   $("#total-count").textContent = subscriptions.length;
   $("#ready-count").textContent = subscriptions.filter((item) => item.file_status === "ready").length;
   renderSubscriptions();
@@ -41,11 +51,13 @@ function renderSubscriptions() {
   const subscriptions = state.dashboard?.subscriptions || [];
   const query = state.query.trim().toLocaleLowerCase();
   const filtered = subscriptions.filter((item) =>
+    (state.filter === "all" || item.enabled === (state.filter === "enabled")) &&
     [item.name, item.url_path, item.file_path, item.note].some((value) => (value || "").toLocaleLowerCase().includes(query))
   );
   $("#subscription-list").replaceChildren(...filtered.map(subscriptionRow));
   $("#empty-state").hidden = subscriptions.length !== 0;
   $("#no-results").hidden = subscriptions.length === 0 || filtered.length !== 0;
+  $("#result-count").textContent = `显示 ${filtered.length} / ${subscriptions.length} 条`;
 }
 
 function subscriptionRow(item) {
@@ -60,13 +72,13 @@ function subscriptionRow(item) {
     : `<span class="badge off">已停用</span>`;
   row.innerHTML = `
     <div class="subscription-main">
-      <h3>${escapeHTML(item.name)}</h3>
-      <p title="${escapeHTML(item.note || "无备注")}">${escapeHTML(item.note || "无备注")}</p>
+      <div class="subscription-title">${icon("layers")}<h3>${escapeHTML(item.name)}</h3></div>
+      ${item.note ? `<p title="${escapeHTML(item.note)}">${escapeHTML(item.note)}</p>` : ""}
       <div class="row-meta">${serviceBadge}<span>${escapeHTML(item.token_hint)}</span></div>
     </div>
     <div class="url-cell">
-      <div class="url-code"><code title="${escapeHTML(url)}">${escapeHTML(url)}</code><button class="copy-mini" type="button" data-copy-url="${escapeHTML(url)}">复制地址</button></div>
-      <div class="row-meta"><span>使用 ?token=你的token 或 Bearer token</span></div>
+      <div class="url-code"><code title="${escapeHTML(url)}">/api/${escapeHTML(item.url_path)}</code><button class="copy-mini" type="button" data-copy-url="${escapeHTML(url)}" aria-label="复制 ${escapeHTML(item.name)} 的地址模板" title="复制地址模板（需填入 token）">${icon("copy")}</button></div>
+
     </div>
     <div class="file-cell">
       <p title="${escapeHTML(item.file_path)}">${escapeHTML(item.file_path)}</p>
@@ -90,32 +102,28 @@ function openEditor(item = null) {
   $("#subscription-note").value = item?.note || "";
   $("#subscription-enabled").checked = item?.enabled ?? true;
   $("#editor-title").textContent = item ? "编辑订阅" : "新建订阅";
-  $("#token-help").textContent = item ? `当前 token ${item.token_hint}，留空表示不修改` : "留空将自动生成；创建后仅展示一次";
+  $("#subscription-token").placeholder = item ? "留空保留原 token" : "留空自动生成";
+  $("#token-help").textContent = item ? `当前 token ${item.token_hint}` : "Token 仅显示一次，请及时保存";
   $("#editor-error").textContent = "";
   $("#subscription-token").type = "password";
   $("#toggle-token").textContent = "显示";
-  editorBackdrop.hidden = false;
-  document.body.style.overflow = "hidden";
-  setTimeout(() => $("#subscription-name").focus(), 30);
+  showModal(editorBackdrop, "#subscription-name");
 }
 
 function closeEditor() {
   fileBrowserLoadSequence += 1;
-  fileBrowserBackdrop.hidden = true;
-  editorBackdrop.hidden = true;
-  document.body.style.overflow = "";
+  if (!fileBrowserBackdrop.hidden) hideModal(fileBrowserBackdrop);
+  hideModal(editorBackdrop);
 }
 
 function openFileBrowser() {
-  fileBrowserBackdrop.hidden = false;
-  document.body.style.overflow = "hidden";
+  showModal(fileBrowserBackdrop, "[data-action='close-file-browser']");
   loadFileDirectory(fileBrowserCurrentPath);
 }
 
 function closeFileBrowser() {
   fileBrowserLoadSequence += 1;
-  fileBrowserBackdrop.hidden = true;
-  document.body.style.overflow = editorBackdrop.hidden ? "" : "hidden";
+  hideModal(fileBrowserBackdrop);
   $("#subscription-file").focus();
 }
 
@@ -183,13 +191,12 @@ function fileBrowserEntry(entry) {
 
 function showCreatedToken(item, token) {
   $("#created-url").value = `${location.origin}/api/${encodeURIComponent(item.url_path)}?token=${encodeURIComponent(token)}`;
-  tokenBackdrop.hidden = false;
-  document.body.style.overflow = "hidden";
+  showModal(tokenBackdrop, "#copy-created-url");
 }
 
 function closeToken() {
-  tokenBackdrop.hidden = true;
-  document.body.style.overflow = "";
+  hideModal(tokenBackdrop);
+  $("#created-url").value = "";
 }
 
 async function saveSubscription(event) {
@@ -262,6 +269,18 @@ async function logout() {
 }
 
 $("#logout-button").addEventListener("click", logout);
+$("#retry-button").addEventListener("click", loadDashboard);
+document.querySelectorAll("[data-filter]").forEach((button) => {
+  button.addEventListener("click", () => {
+    state.filter = button.dataset.filter;
+    document.querySelectorAll("[data-filter]").forEach((candidate) => {
+      const active = candidate === button;
+      candidate.classList.toggle("active", active);
+      candidate.setAttribute("aria-pressed", String(active));
+    });
+    if (state.dashboard) renderSubscriptions();
+  });
+});
 $("#add-button").addEventListener("click", () => openEditor());
 $("#open-file-browser").addEventListener("click", openFileBrowser);
 $("#file-browser-up").addEventListener("click", () => {

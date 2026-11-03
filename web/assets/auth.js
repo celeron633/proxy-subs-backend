@@ -4,6 +4,7 @@ let setupMode = false;
 let captchaID = "";
 
 async function initializeAuthPage() {
+  $("#auth-submit").disabled = true;
   try {
     const status = await api("/admin/api/status");
     if (status.authenticated) {
@@ -12,6 +13,7 @@ async function initializeAuthPage() {
     }
     configureAuthForm(!status.initialized);
     if (status.initialized) await loadCaptcha();
+    $("#auth-submit").disabled = false;
   } catch (error) {
     $("#auth-error").textContent = error.message;
   }
@@ -19,10 +21,7 @@ async function initializeAuthPage() {
 
 function configureAuthForm(isFirstRun) {
   setupMode = isFirstRun;
-  $("#auth-title").textContent = isFirstRun ? "初始化设置" : "登录";
-  $("#auth-description").textContent = isFirstRun
-    ? "首次使用，请设置管理员账号。"
-    : "请输入管理员账号以继续。";
+  $("#auth-title").textContent = isFirstRun ? "设置管理员" : "登录";
   $("#auth-submit").textContent = isFirstRun ? "完成设置" : "登录";
   $("#password").autocomplete = isFirstRun ? "new-password" : "current-password";
   $("#captcha-field").hidden = isFirstRun;

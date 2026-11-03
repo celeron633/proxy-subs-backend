@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
-  <meta name="theme-color" content="#f4f2ec">
-  <title>订阅管理</title>
+  <meta name="theme-color" content="#f8f9ff">
+  <title>订阅管理 · Proxy Subs</title>
   <link rel="icon" href="/favicon.ico">
   <link rel="stylesheet" href="/assets/shared.css">
   <link rel="stylesheet" href="/assets/dashboard.css">
@@ -14,76 +14,54 @@
 </head>
 <body>
   <div class="app-shell">
+    <aside class="sidebar" aria-label="主导航">
+      <a class="wordmark" href="/dashboard"><span class="brand-mark"><svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#layers"></use></svg></span>Proxy Subs</a>
+      <nav class="side-nav">
+        <a class="nav-item" href="/dashboard" aria-current="page"><svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#grid"></use></svg>订阅管理</a>
+        <a class="nav-item" href="/settings" ><svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#shield"></use></svg>安全设置</a>
+      </nav>
+    </aside>
     <header class="topbar">
-      <a class="wordmark" href="/dashboard" aria-label="管理控制台首页">
-        <span class="brand-mark">M</span>
-        <span>管理控制台</span>
-      </a>
-      <div class="account">
-        <span id="account-name"></span>
-        <a class="button button-quiet" href="/settings">设置</a>
-        <button id="logout-button" class="button button-quiet" type="button">退出</button>
-      </div>
+      <h1>订阅管理</h1>
+      <div class="account"><span id="account-name">管理员</span><button id="logout-button" class="button button-quiet" type="button"><svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#logout"></use></svg>退出</button></div>
     </header>
 
     <main class="dashboard">
-      <section class="hero-row">
-        <div>
-          <p class="eyebrow">SUBSCRIPTIONS</p>
-          <h1>订阅管理</h1>
-          <p class="muted">集中管理公开地址、本地文件和访问 token。</p>
-        </div>
-        <button id="add-button" class="button button-primary" type="button"><span aria-hidden="true">＋</span> 新建订阅</button>
-      </section>
 
       <section class="overview" aria-label="服务概览">
+        <article class="metric-card"><div class="metric-top"><span class="metric-label">全部订阅</span><span class="metric-icon"><svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#layers"></use></svg></span></div><strong id="total-count">—</strong></article>
+        <article class="metric-card"><div class="metric-top"><span class="metric-label">可用文件</span><span class="metric-icon"><svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#file"></use></svg></span></div><strong id="ready-count">—</strong></article>
         <article class="switch-card">
-          <div>
-            <div class="card-heading">
-              <span id="service-dot" class="status-dot"></span>
-              <h2>订阅服务</h2>
-            </div>
-            <p id="service-copy" class="muted">所有公开订阅入口均可访问</p>
-          </div>
-          <label class="switch">
-            <input id="api-switch" type="checkbox" role="switch" aria-label="订阅服务总开关">
-            <span class="switch-track"><span class="switch-thumb"></span></span>
-          </label>
-        </article>
-        <article class="metric-card">
-          <span class="metric-label">订阅</span>
-          <strong id="total-count">0</strong>
-          <span class="muted">条配置</span>
-        </article>
-        <article class="metric-card">
-          <span class="metric-label">文件状态</span>
-          <strong id="ready-count">0</strong>
-          <span class="muted">个可读取</span>
+          <div class="metric-top"><span class="metric-label">订阅服务</span><svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#activity"></use></svg></div>
+          <div class="service-control"><div class="card-heading"><span id="service-dot" class="status-dot off"></span><h2 id="service-label">正在连接</h2></div><label class="switch"><input id="api-switch" type="checkbox" role="switch" aria-label="订阅服务总开关" disabled><span class="switch-track"><span class="switch-thumb"></span></span></label></div>
         </article>
       </section>
 
       <section class="content-card">
         <div class="content-heading">
-          <div>
-            <h2>全部订阅</h2>
-            <p class="muted">URL 标识与本地文件一一对应</p>
+          <div class="filter-group" role="group" aria-label="筛选订阅状态">
+            <button class="filter-button active" type="button" data-filter="all" aria-pressed="true">全部</button>
+            <button class="filter-button" type="button" data-filter="enabled" aria-pressed="false">已启用</button>
+            <button class="filter-button" type="button" data-filter="disabled" aria-pressed="false">已停用</button>
           </div>
-          <label class="search-field">
-            <span aria-hidden="true">⌕</span>
-            <input id="search-input" type="search" placeholder="搜索名称、URL 或文件" aria-label="搜索订阅">
-          </label>
+          <div class="list-tools">
+            <label class="search-field"><svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#search"></use></svg><input id="search-input" type="search" placeholder="搜索订阅" aria-label="搜索订阅名称、URL 或文件"></label>
+            <button id="add-button" class="button button-primary" type="button"><svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#plus"></use></svg>新建订阅</button>
+          </div>
         </div>
+        <div id="load-state" class="load-state" role="status">正在加载订阅配置…</div>
+        <div id="load-error" class="empty-state compact" hidden><h3>暂时无法加载订阅</h3><p id="load-error-message"></p><button id="retry-button" class="button button-secondary" type="button">重新加载</button></div>
+        <div class="table-heading" aria-hidden="true"><span>订阅 / 状态</span><span>访问地址</span><span>源文件</span><span>操作</span></div>
         <div id="subscription-list" class="subscription-list"></div>
         <div id="empty-state" class="empty-state" hidden>
-          <div class="empty-icon">↗</div>
-          <h3>创建第一条订阅</h3>
-          <p>连接一个本地文件，系统会生成独立的访问 token。</p>
+          <div class="empty-icon"><svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#layers"></use></svg></div>
+          <h3>暂无订阅</h3>
           <button class="button button-primary" data-action="add" type="button">新建订阅</button>
         </div>
         <div id="no-results" class="empty-state compact" hidden>
           <h3>没有匹配结果</h3>
-          <p>换一个关键词试试。</p>
         </div>
+        <div id="result-count" class="list-footer" aria-live="polite">正在加载…</div>
       </section>
     </main>
   </div>
@@ -92,7 +70,6 @@
     <section class="modal" role="dialog" aria-modal="true" aria-labelledby="editor-title">
       <div class="modal-heading">
         <div>
-          <p class="eyebrow">SUBSCRIPTION</p>
           <h2 id="editor-title">新建订阅</h2>
         </div>
         <button class="icon-button" data-action="close-editor" type="button" aria-label="关闭">×</button>
@@ -115,7 +92,6 @@
               <input id="subscription-file" maxlength="1024" placeholder="/etc/subscriptions/clash.yaml" required>
               <button id="open-file-browser" class="button button-secondary" type="button">选择服务器文件</button>
             </div>
-            <small>可手动输入路径，或从服务器允许浏览的目录中选择</small>
           </label>
           <label class="span-two">
             <span>访问 token</span>
@@ -130,7 +106,6 @@
         <div class="enabled-row">
           <div>
             <strong>立即启用</strong>
-            <p>关闭后，这条订阅地址将暂时不可用。</p>
           </div>
           <label class="switch">
             <input id="subscription-enabled" type="checkbox" role="switch" checked aria-label="立即启用订阅">
@@ -150,7 +125,6 @@
     <section class="modal file-browser-modal" role="dialog" aria-modal="true" aria-labelledby="file-browser-title">
       <div class="modal-heading">
         <div>
-          <p class="eyebrow">SERVER FILES</p>
           <h2 id="file-browser-title">选择服务器文件</h2>
         </div>
         <button class="icon-button" data-action="close-file-browser" type="button" aria-label="关闭">×</button>
@@ -175,10 +149,9 @@
 
   <div id="token-backdrop" class="modal-backdrop" hidden>
     <section class="modal token-modal" role="dialog" aria-modal="true" aria-labelledby="token-title">
-      <div class="success-mark">✓</div>
-      <p class="eyebrow">TOKEN CREATED</p>
-      <h2 id="token-title">订阅已经可以使用</h2>
-      <p class="muted">这是 token 的唯一一次完整展示。复制完整地址并保存在安全的位置。</p>
+      <div class="success-mark"><svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#check"></use></svg></div>
+      <h2 id="token-title">订阅已保存</h2>
+      <p class="muted">Token 仅显示一次，请保存完整地址。</p>
       <label>
         <span>完整订阅地址</span>
         <div class="copy-field"><input id="created-url" readonly><button id="copy-created-url" class="button button-secondary" type="button">复制</button></div>

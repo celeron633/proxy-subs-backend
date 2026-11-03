@@ -61,3 +61,50 @@ function formatBytes(bytes) {
   const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
   return `${(bytes / 1024 ** index).toFixed(index ? 1 : 0)} ${units[index]}`;
 }
+
+function icon(name) {
+  return `<svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#${name}"></use></svg>`;
+}
+
+// Keep keyboard focus inside the top dialog, including the nested file picker.
+const modalStack = [];
+const modalTriggers = new WeakMap();
+const focusableSelector = "button:not(:disabled), input:not(:disabled):not([type='hidden']), textarea:not(:disabled), a[href], [tabindex='0']";
+
+function syncModalState() {
+  const current = modalStack.at(-1);
+  const shell = $(".app-shell");
+  if (shell) shell.inert = Boolean(current);
+  modalStack.forEach((element) => { element.inert = element !== current; });
+  document.body.style.overflow = current ? "hidden" : "";
+}
+
+function showModal(element, initialFocus) {
+  modalTriggers.set(element, document.activeElement);
+  if (!modalStack.includes(element)) modalStack.push(element);
+  element.hidden = false;
+  syncModalState();
+  requestAnimationFrame(() => {
+    if (modalStack.at(-1) === element) element.querySelector(initialFocus || focusableSelector)?.focus();
+  });
+}
+
+function hideModal(element) {
+  const index = modalStack.indexOf(element);
+  if (index !== -1) modalStack.splice(index, 1);
+  element.hidden = true;
+  element.inert = false;
+  syncModalState();
+  const trigger = modalTriggers.get(element);
+  if (trigger?.isConnected && !trigger.closest("[inert], [hidden]")) trigger.focus();
+  else (modalStack.at(-1)?.querySelector(focusableSelector) || $("#add-button"))?.focus();
+}
+
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Tab" || !modalStack.length) return;
+  const controls = [...modalStack.at(-1).querySelectorAll(focusableSelector)].filter((element) => element.getClientRects().length);
+  const first = controls[0];
+  const last = controls.at(-1);
+  if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+  else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+});
