@@ -2,8 +2,11 @@
 
 let setupMode = false;
 let captchaID = "";
+let authReady = false;
 
 async function initializeAuthPage() {
+  authReady = false;
+  $("#auth-error").textContent = "";
   $("#auth-submit").disabled = true;
   try {
     const status = await api("/admin/api/status");
@@ -13,9 +16,11 @@ async function initializeAuthPage() {
     }
     configureAuthForm(!status.initialized);
     if (status.initialized) await loadCaptcha();
+    authReady = true;
     $("#auth-submit").disabled = false;
   } catch (error) {
     $("#auth-error").textContent = error.message;
+    setBusy($("#auth-submit"), false, "重试");
   }
 }
 
@@ -47,6 +52,10 @@ async function loadCaptcha() {
 
 async function submitCredentials(event) {
   event.preventDefault();
+  if (!authReady) {
+    await initializeAuthPage();
+    return;
+  }
   const button = $("#auth-submit");
   const idleLabel = setupMode ? "完成设置" : "登录";
   $("#auth-error").textContent = "";

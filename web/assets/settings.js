@@ -1,8 +1,13 @@
 "use strict";
 
 let originalProtectionState = true;
+let settingsReady = false;
 
 async function loadSecuritySettings() {
+  settingsReady = false;
+  $("#protection-switch").disabled = true;
+  setBusy($("#save-settings"), true, "加载中…");
+  $("#setting-state").textContent = "";
   try {
     const [dashboard, settings] = await Promise.all([
       api("/admin/api/dashboard"),
@@ -12,13 +17,16 @@ async function loadSecuritySettings() {
     originalProtectionState = settings.enabled;
     $("#protection-switch").checked = settings.enabled;
     $("#protection-switch").disabled = false;
+    settingsReady = true;
+    $("#save-settings").textContent = "保存设置";
     updateSettingState();
   } catch (error) {
     if (error.status === 401) {
       window.location.replace("/");
       return;
     }
-    toast(error.message, true);
+    $("#setting-state").textContent = error.message;
+    setBusy($("#save-settings"), false, "重试");
   }
 }
 
@@ -31,6 +39,10 @@ function updateSettingState() {
 }
 
 async function saveSecuritySettings() {
+  if (!settingsReady) {
+    await loadSecuritySettings();
+    return;
+  }
   const button = $("#save-settings");
   const enabled = $("#protection-switch").checked;
   $("#protection-switch").disabled = true;
